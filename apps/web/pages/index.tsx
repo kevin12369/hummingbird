@@ -7,7 +7,7 @@ import { DownloadMidi } from '../components/DownloadMidi';
 import { SettingsModal } from '../components/SettingsModal';
 import { useTheme } from '../lib/theme';
 import { createMachine, initialState, type State, type Event } from '../lib/state-machine';
-import { transcribeAudio, detectKey } from '@hummingbird/audio';
+import { transcribeAudio, detectKey, type NoteEvent } from '@hummingbird/audio';
 import { assembleMidi } from '@hummingbird/midi';
 import { buildPrompt, type Style } from '@hummingbird/prompt';
 import { arrangeMusic, type Arrangement } from '../lib/llm-direct';
@@ -29,14 +29,19 @@ export default function Home() {
   }
 
   async function handleRecordingComplete(blob: Blob) {
-    applyState(machine.state.status === 'recording' || machine.state.status === 'idle' || machine.state.status === 'error'
-      ? { status: 'processing', blob }
-      : machine.state);
+    const canStart = machine.state.status === 'recording' || machine.state.status === 'idle' || machine.state.status === 'error';
+    // Pre-fill key/mode/bpm so the 'processing' state satisfies the discriminated union.
+    // The real values are filled in by the pipeline below.
+    applyState(
+      canStart
+        ? { status: 'processing', blob, key: 'C' as const, mode: 'major' as const, bpm }
+        : machine.state,
+    );
     try {
       // 1. Transcribe
-      const notes = await transcribeAudio(blob);
+      const notes: NoteEvent[] = await transcribeAudio(blob);
       // 2. Detect key
-      const { key, mode, confidence } = detectKey(notes);
+      const { key, mode } = detectKey(notes);
       // 3. Build prompt
       const prompt = buildPrompt({ notes, key, mode, bpm, style });
       // 4. LLM arrangement
@@ -52,7 +57,7 @@ export default function Home() {
       // 5. Assemble MIDI
       const midiBytes = await assembleMidi({ notes, arrangement: finalArr });
       setArrangement(finalArr);
-      applyState({ status: 'ready', midi: midiBytes, key, mode, bpm });
+      applyState({ status: 'ready', midi: midiBytes, key, mode, bpm, notes });
     } catch (e) {
       applyState({ status: 'error', message: (e as Error).message });
     }

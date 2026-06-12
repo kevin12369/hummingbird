@@ -20,6 +20,9 @@ importers:
       '@hummingbird/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@hummingbird/lyrics':
+        specifier: workspace:*
+        version: link:../../packages/lyrics
       '@hummingbird/midi':
         specifier: workspace:*
         version: link:../../packages/midi
