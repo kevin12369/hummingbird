@@ -1,8 +1,32 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { arrangeMusic } from '../lib/llm-direct';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { arrangeMusic, trySampleArrangeMusic, shouldSkipLlmForTrySample } from '../lib/llm-direct';
 
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
+const originalLocation = window.location;
+const originalEnv = process.env.NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM;
+
+function setHostname(value: string) {
+  // jsdom defines `hostname` on the Location prototype as a non-configurable
+  // getter, so we can't redefine it. Replace the whole `window.location`
+  // with a plain object that exposes the same shape used by llm-direct.ts.
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    writable: true,
+    value: { hostname: value },
+  });
+}
+
+beforeEach(() => {
+  setHostname('localhost');
+  delete process.env.NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM;
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  Object.defineProperty(window, 'location', { configurable: true, writable: true, value: originalLocation });
+  if (originalEnv === undefined) delete process.env.NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM;
+  else process.env.NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM = originalEnv;
+});
 
 function mockFetch(body: any, status = 200) {
   globalThis.fetch = vi.fn().mockResolvedValue({
@@ -55,5 +79,45 @@ describe('arrangeMusic', () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as any;
     const r = await arrangeMusic(validInput);
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('trySampleArrangeMusic', () => {
+  it('skips LLM and returns pop fallback when on github.io', async () => {
+    setHostname('kevin12369.github.io');
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as any;
+    const r = await trySampleArrangeMusic(validInput);
+    expect(r.ok).toBe(true);
+    expect(r.arrangement?.chordProgression).toEqual(['I', 'V', 'vi', 'IV']);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('skips LLM when NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM=true', async () => {
+    process.env.NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM = 'true';
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as any;
+    const r = await trySampleArrangeMusic(validInput);
+    expect(r.ok).toBe(true);
+    expect(r.arrangement?.bpm).toBe(120);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('delegates to real arrangeMusic on localhost (LLM path still available)', async () => {
+    mockFetch({ response: '{"chordProgression":["ii","V","I","vi"],"bassLine":["D2","G2","C2","A2"],"drumPattern":[1,0,0,0]}' });
+    const r = await trySampleArrangeMusic(validInput);
+    expect(r.ok).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://localhost:11434/api/generate', expect.objectContaining({ method: 'POST' }));
+    expect(r.arrangement?.chordProgression).toEqual(['ii', 'V', 'I', 'vi']);
+  });
+});
+
+describe('shouldSkipLlmForTrySample', () => {
+  it('returns false on localhost with no env var', () => {
+    expect(shouldSkipLlmForTrySample()).toBe(false);
+  });
+  it('returns true when env var is set', () => {
+    process.env.NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM = 'true';
+    expect(shouldSkipLlmForTrySample()).toBe(true);
   });
 });

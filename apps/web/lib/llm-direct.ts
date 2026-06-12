@@ -117,3 +117,20 @@ export async function arrangeMusic(input: ArrangeInput): Promise<ArrangeResult> 
 export function buildArrangePrompt(input: { notes: NoteEvent[]; key: Key; mode: Mode; bpm: number; style: Style }): PromptOutput {
   return buildPrompt(input);
 }
+
+// When the demo is opened on GitHub Pages (or when explicitly disabled via
+// NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM), the try-sample flow skips the LLM call
+// entirely and returns a hardcoded pop arrangement. The LLM path is still
+// available through the regular Recorder flow.
+export function shouldSkipLlmForTrySample(): boolean {
+  if (process.env.NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM === 'true') return true;
+  if (typeof window !== 'undefined' && window.location?.hostname?.includes('github.io')) return true;
+  return false;
+}
+
+export async function trySampleArrangeMusic(input: ArrangeInput): Promise<ArrangeResult> {
+  if (shouldSkipLlmForTrySample()) {
+    return { ok: true, arrangement: POP_FALLBACK };
+  }
+  return arrangeMusic(input);
+}

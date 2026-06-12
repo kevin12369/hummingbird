@@ -17,7 +17,7 @@ import { loadSettings, saveSettings } from '../lib/settings';
 import { transcribeAudio, detectKey, type NoteEvent } from '@hummingbird/audio';
 import { assembleMidi } from '@hummingbird/midi';
 import { buildPrompt, type Style } from '@hummingbird/prompt';
-import { arrangeMusic, type Arrangement } from '../lib/llm-direct';
+import { arrangeMusic, trySampleArrangeMusic, type Arrangement } from '../lib/llm-direct';
 import { getLyricsPrompt, generateLyrics, type Locale as LyricsLocale } from '@hummingbird/lyrics';
 import { buildFeedbackPrompt, generateFeedback } from '@hummingbird/feedback';
 
@@ -90,6 +90,10 @@ export default function Home() {
   async function handleTrySample() {
     // Fetch the demo audio + reference notes from the static samples/ dir.
     // basePath is configured in next.config.js (matches GitHub Pages path).
+    // We run the full pipeline inline (transcribe -> key -> prompt -> arrange -> midi)
+    // so the sample is treated the same as a real recording. The arrangement
+    // step uses trySampleArrangeMusic(), which skips the LLM call when running
+    // on GitHub Pages (or when NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM=true).
     const basePath = '/hummingbird';
     try {
       const audioRes = await fetch(`${basePath}/samples/humming-demo.webm`);
@@ -98,17 +102,41 @@ export default function Home() {
       const notesRes = await fetch(`${basePath}/samples/humming-demo.json`);
       if (!notesRes.ok) throw new Error(`Sample notes fetch failed: ${notesRes.status}`);
       const sampleData = await notesRes.json();
-      dispatch({ type: 'START_RECORDING' });
-      dispatch({
-        type: 'STOP_RECORDING',
+      const sampleBpm: number = sampleData.bpm;
+      // Pre-fill processing state so the discriminated union is satisfied.
+      applyState({
+        status: 'processing',
         blob: audioBlob,
-        notes: sampleData.notes,
         key: sampleData.key,
         mode: sampleData.mode,
-        bpm: sampleData.bpm,
-        style: sampleData.style,
+        bpm: sampleBpm,
       });
-      showToast({ severity: 'info', message: 'Sample loaded - running pipeline...' });
+      try {
+        // 1. Transcribe
+        const notes: NoteEvent[] = await transcribeAudio(audioBlob);
+        // 2. Detect key (use sampleData values since sample is reference-grade)
+        const key = sampleData.key as 'C' | 'D' | 'E' | 'F' | 'G' | 'A' | 'B' | 'C#' | 'D#' | 'F#' | 'G#' | 'A#';
+        const mode = sampleData.mode as 'major' | 'minor';
+        // 3. Build prompt
+        const prompt = buildPrompt({ notes, key, mode, bpm: sampleBpm, style });
+        // 4. Arrangement (LLM or hardcoded fallback for GitHub Pages)
+        const llmBaseUrl = localStorage.getItem('hummingbird:local:baseUrl') ?? 'http://localhost:11434';
+        const llmModel = localStorage.getItem('hummingbird:local:model') ?? 'llama3.1:8b';
+        const llmProvider = (localStorage.getItem('hummingbird:local:provider') ?? 'ollama') as 'ollama' | 'openai-compatible';
+        const arr = await trySampleArrangeMusic({ prompt, model: llmProvider, localBaseUrl: llmBaseUrl, localModel: llmModel });
+        if (!arr.ok || !arr.arrangement) {
+          applyState({ status: 'error', message: arr.error ?? 'Try-sample arrangement failed' });
+          return;
+        }
+        const finalArr: Arrangement = { ...arr.arrangement, bpm: sampleBpm };
+        // 5. Assemble MIDI
+        const midiBytes = await assembleMidi({ notes, arrangement: finalArr });
+        setArrangement(finalArr);
+        applyState({ status: 'ready', midi: midiBytes, key, mode, bpm: sampleBpm, notes, style });
+        showToast({ severity: 'success', message: 'Sample loaded' });
+      } catch (inner) {
+        applyState({ status: 'error', message: (inner as Error).message });
+      }
     } catch (e) {
       showToast({ severity: 'error', message: (e as Error).message });
     }
