@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import Home from '../pages/index';
 
+// Mock generateLyrics so we don't hit the network
+vi.mock('@hummingbird/lyrics', async () => {
+  const actual = await vi.importActual<typeof import('@hummingbird/lyrics')>('@hummingbird/lyrics');
+  return { ...actual, generateLyrics: vi.fn() };
+});
+
 describe('Home page', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -30,5 +36,20 @@ describe('Home page', () => {
       screen.getByRole('button', { name: /⚙/ }).click();
     });
     expect(screen.getByText(/theme/i)).toBeTruthy();
+  });
+
+  it('smoke: Home renders without errors when StyleSelector + LyricsPanel are integrated', () => {
+    // The Home page should mount cleanly. The style selector + lyrics panel
+    // only render in 'ready' state, but we verify the component tree imports
+    // and instantiates without throwing.
+    const { container } = render(<Home />);
+    expect(container).toBeTruthy();
+    // In idle state, neither component renders, so we just verify the page works.
+  });
+
+  it('smoke: Home page imports do not throw on initial render', () => {
+    // Validates that the import of StyleSelector / LyricsPanel from the page
+    // module is wired up (catches circular imports, missing exports).
+    expect(() => render(<Home />)).not.toThrow();
   });
 });

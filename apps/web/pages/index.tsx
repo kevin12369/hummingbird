@@ -5,12 +5,15 @@ import { KeyDisplay } from '../components/KeyDisplay';
 import { Player } from '../components/Player';
 import { DownloadMidi } from '../components/DownloadMidi';
 import { SettingsModal } from '../components/SettingsModal';
+import { StyleSelector, type Style as HummingbirdStyle } from '../components/StyleSelector';
+import { LyricsPanel } from '../components/LyricsPanel';
 import { useTheme } from '../lib/theme';
 import { createMachine, initialState, type State, type Event } from '../lib/state-machine';
 import { transcribeAudio, detectKey, type NoteEvent } from '@hummingbird/audio';
 import { assembleMidi } from '@hummingbird/midi';
 import { buildPrompt, type Style } from '@hummingbird/prompt';
 import { arrangeMusic, type Arrangement } from '../lib/llm-direct';
+import { getLyricsPrompt, generateLyrics, type Locale as LyricsLocale } from '@hummingbird/lyrics';
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
@@ -19,6 +22,7 @@ export default function Home() {
   const [style] = useState<Style>('pop');
   const [bpm, setBpm] = useState(120);
   const [arrangement, setArrangement] = useState<Arrangement | null>(null);
+  const [lyricsLocale, setLyricsLocale] = useState<LyricsLocale>('zh');
 
   function dispatch(event: Event) {
     setMachine((m) => createMachine(m.transition(event)));
@@ -57,9 +61,62 @@ export default function Home() {
       // 5. Assemble MIDI
       const midiBytes = await assembleMidi({ notes, arrangement: finalArr });
       setArrangement(finalArr);
-      applyState({ status: 'ready', midi: midiBytes, key, mode, bpm, notes });
+      applyState({ status: 'ready', midi: midiBytes, key, mode, bpm, notes, style });
     } catch (e) {
       applyState({ status: 'error', message: (e as Error).message });
+    }
+  }
+
+  async function handleStyleSwitch(newStyle: HummingbirdStyle) {
+    // Re-run the pipeline with the new style
+    const s = machine.state;
+    if (s.status !== 'ready' || !s.notes || !s.key || !s.mode) return;
+    dispatch({ type: 'TRY_OTHER_STYLE', style: newStyle });
+    try {
+      const prompt = buildPrompt({ notes: s.notes, key: s.key, mode: s.mode, bpm: s.bpm, style: newStyle });
+      const llmBaseUrl = localStorage.getItem('hummingbird:local:baseUrl') ?? 'http://localhost:11434';
+      const llmModel = localStorage.getItem('hummingbird:local:model') ?? 'llama3.1:8b';
+      const llmProvider = (localStorage.getItem('hummingbird:local:provider') ?? 'ollama') as 'ollama' | 'openai-compatible';
+      const arr = await arrangeMusic({ prompt, model: llmProvider, localBaseUrl: llmBaseUrl, localModel: llmModel });
+      if (!arr.ok || !arr.arrangement) {
+        dispatch({ type: 'PROCESS_ERROR', message: arr.error ?? 'Style switch failed' });
+        return;
+      }
+      const finalArr = { ...arr.arrangement, bpm: s.bpm };
+      const midiBytes = await assembleMidi({ notes: s.notes, arrangement: finalArr });
+      dispatch({ type: 'PROCESS_COMPLETE', midi: midiBytes });
+    } catch (e) {
+      dispatch({ type: 'PROCESS_ERROR', message: (e as Error).message });
+    }
+  }
+
+  async function handleGenerateLyrics() {
+    const s = machine.state;
+    if (s.status !== 'ready' || !s.notes || !s.key || !s.mode) return;
+    dispatch({ type: 'GENERATE_LYRICS' });
+    try {
+      const llmBaseUrl = localStorage.getItem('hummingbird:local:baseUrl') ?? 'http://localhost:11434';
+      const llmModel = localStorage.getItem('hummingbird:local:model') ?? 'llama3.1:8b';
+      const llmProvider = (localStorage.getItem('hummingbird:local:provider') ?? 'ollama') as 'ollama' | 'openai-compatible';
+      const prompt = getLyricsPrompt(lyricsLocale, {
+        melodySummary: `${s.key} ${s.mode}, ${s.bpm} BPM, ${s.notes.length} notes`,
+        bpm: s.bpm,
+        style: s.style ?? 'pop',
+      });
+      const result = await generateLyrics({
+        prompt,
+        model: llmProvider,
+        localBaseUrl: llmBaseUrl,
+        localModel: llmModel,
+        locale: lyricsLocale,
+      });
+      if (!result.ok) {
+        dispatch({ type: 'LYRICS_ERROR', message: result.error ?? 'Lyrics generation failed' });
+        return;
+      }
+      dispatch({ type: 'LYRICS_COMPLETE', lyrics: result.lyrics });
+    } catch (e) {
+      dispatch({ type: 'LYRICS_ERROR', message: (e as Error).message });
     }
   }
 
@@ -90,8 +147,26 @@ export default function Home() {
         {state.status === 'ready' && (
           <div className="flex flex-col gap-4 border-t border-zinc-800 pt-4">
             <KeyDisplay keyName={state.key} mode={state.mode} bpm={state.bpm} confidence={null} />
+            <StyleSelector
+              current={(state.style ?? 'pop') as HummingbirdStyle}
+              onSelect={handleStyleSwitch}
+              disabled={false}
+            />
+            <LyricsPanel
+              lyrics={state.lyrics ?? null}
+              lyricsError={state.lyricsError ?? null}
+              onGenerate={handleGenerateLyrics}
+              onLocaleChange={setLyricsLocale}
+            />
             <Player midi={state.midi} bpm={state.bpm} />
             <DownloadMidi midi={new Blob([state.midi as BlobPart], { type: 'audio/midi' })} />
+          </div>
+        )}
+
+        {state.status === 'lyrics-generating' && (
+          <div className="flex flex-col gap-4 border-t border-zinc-800 pt-4">
+            <KeyDisplay keyName={state.key} mode={state.mode} bpm={state.bpm} confidence={null} />
+            <p className="text-sm text-zinc-400 text-center">Generating lyrics…</p>
           </div>
         )}
 
