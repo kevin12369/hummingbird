@@ -2,10 +2,10 @@
 
 > **你哼 30 秒,浏览器给你一首歌的 MIDI。/ Hum 30 seconds, get a 4-track MIDI in your browser.**
 
-[![Status](https://img.shields.io/badge/status-Phase_1_MVP_shipped-brightgreen)](#)
+[![Status](https://img.shields.io/badge/status-Phase_2_shipped-brightgreen)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue)](#)
 [![Stack](https://img.shields.io/badge/stack-GitHub_Pages-222?logo=github)](#)
-[![Tests](https://img.shields.io/badge/tests-101_passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-142_passing-brightgreen)](#)
 
 ---
 
@@ -43,6 +43,9 @@
 - 用户点 **Play 4 tracks** → Tone.js 实时回放 melody / chords / bass(鼓暂未实现,Phase 2)
 - 用户点 **Download .mid** → 拿到 `hummingbird.mid`,直接拖进 Logic / Ableton / FL Studio 二次创作
 - 右上角 ⚙ 打开 Settings → 切主题色 / 配置本机 LLM(Ollama / LM Studio / vLLM / llama.cpp 都行)
+- Phase 2: 5 风格(全启用) — StyleSelector 5 个 chip 直接在主页选,不用再手改 prompt
+- Phase 2: 歌词生成 — 3 语言(zh / en / ja)文本输出 + 同一份歌词嵌入 MIDI 第 5 轨 meta events,DAW(Logic / Ableton / FL Studio)打开能直接看到歌词
+- Phase 2: 风格迁移 — 不喜欢当前风格?点 "Try another style" 按钮,主 pipeline 复用音频 / 调式结果,只重跑 LLM 编排 + MIDI 拼装
 
 ---
 
@@ -88,6 +91,13 @@
 - [x] 写 `pages/index.tsx` 端到端流
 - [x] 写 GitHub Pages 自动部署 + CI 工作流
 - [x] 写 README + 101 测试通过
+- [x] 写 `packages/lyrics`(3 语言 prompt + Zod 校验 + 浏览器 LLM 编排)
+- [x] 扩 `packages/midi` 接 lyrics(第 5 轨 meta events,DAW 可见)
+- [x] 扩 state machine(4 新事件 + 2 新状态,ready 字段扩)
+- [x] 写 `StyleSelector`(5 风格 chip,主页直接选)
+- [x] 写 `LyricsPanel`(i18n 切换 + 下载,失败回退不阻塞主流程)
+- [x] 集成到 `pages/index.tsx` + "Try another style" 按钮
+- [x] 写 README + 142 测试通过(Phase 2)
 
 ---
 
@@ -193,11 +203,15 @@
 
 **做了什么**
 
-- 4 个 pure-TS package(`audio` / `midi` / `prompt` / `llm`)+ 1 个 Next.js app(web),pnpm workspace 管理
+- 5 个 pure-TS package(`audio` / `midi` / `prompt` / `llm` / `lyrics`)+ 1 个 Next.js app(web),pnpm workspace 管理
 - 浏览器内完整音视频管线:MediaRecorder → Basic Pitch ONNX → Krumhansl-Schmuckler → 本地 LLM → `@tonejs/midi` 拼装 → Tone.js 回放,**全程不上传任何数据**
 - 6 状态状态机(idle / recording / processing / ready / playing / error),所有 transition 受 current state 守卫
 - 4 轨 MIDI 拼装:melody(通道 0) + chords(1) + bass(2) + drums(9 GM),含 tempo + 4/4 拍号
+- **Phase 2:第 5 轨 lyrics meta events** — 歌词嵌入 MIDI,DAW(Logic / Ableton / FL Studio)直接打开可见
 - Tone.js PolySynth 4 轨实时回放(鼓轨 Phase 2),Web Audio 调度
+- **Phase 2:5 风格全启用** — StyleSelector 5 chip(pop / lo-fi / jazz / rock / classical),主页直接选,不用手改 prompt
+- **Phase 2:歌词生成** — 3 语言(zh / en / ja)i18n prompt + Zod JSON 校验,失败回退不阻塞主流程
+- **Phase 2:风格迁移** — "Try another style" 按钮,复用音频 / 调式结果,只重跑 LLM + MIDI 拼装
 - 5 风格 prompt 模板(pop / lo-fi / jazz / rock / classical),严格 JSON 输出(chordProgression / bassLine / drumPattern)
 - 6 LLM provider 抽象(Workers AI / DeepSeek / Gemini / Anthropic / Ollama / OpenAI 兼容),含 SSRF 防护 + 30s 可调超时
 - 主题色 localStorage 持久化 + Theme panel
@@ -217,9 +231,9 @@
 
 **跑起来的数字**
 
-- 101 测试通过(audio 15 + prompt 5 + llm 40 + midi 5 + web 36)
+- **142** 测试通过(audio 15 + prompt 5 + llm 40 + midi 8 + lyrics 18 + web 56)
 - TypeScript strict + `noUncheckedIndexedAccess` 干净
-- 5 风格 prompt × 6 LLM provider × 4 packages/apps × 1 web app
+- 5 风格 prompt × 6 LLM provider × 5 packages/apps × 1 web app × 3 lyrics locale
 
 **本地开发**
 
@@ -231,7 +245,7 @@ pnpm dev            # = pnpm --filter @hummingbird/web dev, http://localhost:300
 **测试**
 
 ```bash
-pnpm test          # 101 tests across 5 packages
+pnpm test          # 142 tests across 6 packages
 pnpm -r exec tsc --noEmit   # strict typecheck
 ```
 
@@ -281,4 +295,4 @@ pnpm -r exec tsc --noEmit   # strict typecheck
 
 ---
 
-> 这项目 Phase 1 代码已经 100% 写完,15 个 task 全部 commit。是 ATNL 5 个项目里**唯一一个全客户端、无后端**的——Whimsy 还要 Cloudflare Workers 转发,Sry 还要后端 session,Tome-FM 还要 Spotify OAuth,只有 Hummingbird 是真·纯静态。
+> 这项目 Phase 1 + Phase 2 代码已经 100% 写完,23 个 task 全部 commit。是 ATNL 5 个项目里**唯一一个全客户端、无后端**的——Whimsy 还要 Cloudflare Workers 转发,Sry 还要后端 session,Tome-FM 还要 Spotify OAuth,只有 Hummingbird 是真·纯静态。
