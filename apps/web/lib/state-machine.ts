@@ -1,5 +1,6 @@
 import type { Key, Mode, NoteEvent } from '@hummingbird/audio';
 import type { LyricsOutput } from '@hummingbird/lyrics';
+import type { FeedbackOutput } from '@hummingbird/feedback';
 
 export type Style = 'pop' | 'lo-fi' | 'jazz' | 'rock' | 'classical';
 
@@ -9,6 +10,8 @@ interface BaseState {
   targetStyle?: Style;
   lyrics?: LyricsOutput;
   lyricsError?: string;
+  feedback?: FeedbackOutput;
+  feedbackError?: string;
 }
 
 export type State =
@@ -18,6 +21,7 @@ export type State =
   | ({ status: 'ready'; midi: Uint8Array; key: Key; mode: Mode; bpm: number; style?: Style } & BaseState)
   | ({ status: 'playing'; midi: Uint8Array; key: Key; mode: Mode; bpm: number; style?: Style } & BaseState)
   | ({ status: 'lyrics-generating'; midi: Uint8Array; key: Key; mode: Mode; bpm: number; style?: Style } & BaseState)
+  | ({ status: 'feedback-generating'; midi: Uint8Array; key: Key; mode: Mode; bpm: number; style?: Style } & BaseState)
   | ({ status: 'error'; message: string } & BaseState);
 
 export type Event =
@@ -31,7 +35,10 @@ export type Event =
   | { type: 'GENERATE_LYRICS' }
   | { type: 'LYRICS_COMPLETE'; lyrics: LyricsOutput }
   | { type: 'LYRICS_ERROR'; message: string }
-  | { type: 'TRY_OTHER_STYLE'; style: Style };
+  | { type: 'TRY_OTHER_STYLE'; style: Style }
+  | { type: 'GENERATE_FEEDBACK' }
+  | { type: 'FEEDBACK_COMPLETE'; feedback: FeedbackOutput }
+  | { type: 'FEEDBACK_ERROR'; message: string };
 
 export function initialState(): State {
   return { status: 'idle' };
@@ -163,6 +170,52 @@ export function createMachine(state: State) {
               mode: state.mode,
               bpm: state.bpm,
               targetStyle: event.style,
+            };
+          }
+          return state;
+        case 'GENERATE_FEEDBACK':
+          if (state.status === 'ready') {
+            return {
+              status: 'feedback-generating',
+              midi: state.midi,
+              key: state.key,
+              mode: state.mode,
+              bpm: state.bpm,
+              style: state.style,
+              notes: state.notes,
+              blob: state.blob,
+              feedback: state.feedback,
+              feedbackError: state.feedbackError,
+            };
+          }
+          return state;
+        case 'FEEDBACK_COMPLETE':
+          if (state.status === 'feedback-generating') {
+            return {
+              status: 'ready',
+              midi: state.midi,
+              key: state.key,
+              mode: state.mode,
+              bpm: state.bpm,
+              style: state.style,
+              notes: state.notes,
+              blob: state.blob,
+              feedback: event.feedback,
+            };
+          }
+          return state;
+        case 'FEEDBACK_ERROR':
+          if (state.status === 'feedback-generating') {
+            return {
+              status: 'ready',
+              midi: state.midi,
+              key: state.key,
+              mode: state.mode,
+              bpm: state.bpm,
+              style: state.style,
+              notes: state.notes,
+              blob: state.blob,
+              feedbackError: event.message,
             };
           }
           return state;

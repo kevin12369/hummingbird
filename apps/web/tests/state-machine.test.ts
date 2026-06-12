@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createMachine, initialState, type State, type Event } from '../lib/state-machine';
+import type { FeedbackOutput } from '@hummingbird/feedback';
 
 describe('state machine', () => {
   it('initialState is idle', () => {
@@ -106,5 +107,35 @@ describe('state machine', () => {
       expect(next.mode).toBe('minor');
       expect(next.bpm).toBe(100);
     }
+  });
+
+  it('transitions ready -> feedback-generating on GENERATE_FEEDBACK', () => {
+    const m = createMachine({ status: 'ready', midi: new Uint8Array(), key: 'C', mode: 'major', bpm: 120 });
+    const next = m.transition({ type: 'GENERATE_FEEDBACK' });
+    expect(next.status).toBe('feedback-generating');
+  });
+
+  it('transitions feedback-generating -> ready on FEEDBACK_COMPLETE (adds feedback field)', () => {
+    const m = createMachine({ status: 'feedback-generating', midi: new Uint8Array(), key: 'C', mode: 'major', bpm: 120 });
+    const feedback: FeedbackOutput = {
+      items: [{ category: 'praise', severity: 'praise', text: 'good' }],
+      rawText: '',
+    };
+    const next = m.transition({ type: 'FEEDBACK_COMPLETE', feedback });
+    expect(next.status).toBe('ready');
+    if (next.status === 'ready') expect(next.feedback).toEqual(feedback);
+  });
+
+  it('transitions feedback-generating -> ready on FEEDBACK_ERROR (adds feedbackError field)', () => {
+    const m = createMachine({ status: 'feedback-generating', midi: new Uint8Array(), key: 'C', mode: 'major', bpm: 120 });
+    const next = m.transition({ type: 'FEEDBACK_ERROR', message: 'LLM failed' });
+    expect(next.status).toBe('ready');
+    if (next.status === 'ready') expect(next.feedbackError).toBe('LLM failed');
+  });
+
+  it('GENERATE_FEEDBACK is no-op from non-ready state', () => {
+    const m = createMachine({ status: 'idle' });
+    const next = m.transition({ type: 'GENERATE_FEEDBACK' });
+    expect(next.status).toBe('idle');
   });
 });

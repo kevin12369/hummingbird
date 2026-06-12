@@ -13,6 +13,7 @@
     "@hummingbird/audio": "workspace:*",
     "@hummingbird/midi": "workspace:*",
     "@hummingbird/lyrics": "workspace:*",
+    "@hummingbird/feedback": "workspace:*",
     "@hummingbird/prompt": "workspace:*",
     "@hummingbird/llm": "workspace:*",
     "@tonejs/midi": "^2.0.0",

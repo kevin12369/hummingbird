@@ -17,6 +17,9 @@ importers:
       '@hummingbird/audio':
         specifier: workspace:*
         version: link:../../packages/audio
+      '@hummingbird/feedback':
+        specifier: workspace:*
+        version: link:../../packages/feedback
       '@hummingbird/llm':
         specifier: workspace:*
         version: link:../../packages/llm
