@@ -6,9 +6,11 @@ export interface SettingsModalProps {
   onClose: () => void;
   theme: Theme;
   onThemeChange: (patch: Partial<Theme>) => void;
+  autoFeedback: boolean;
+  setAutoFeedback: (v: boolean) => void;
 }
 
-export function SettingsModal({ open, onClose, theme, onThemeChange }: SettingsModalProps) {
+export function SettingsModal({ open, onClose, theme, onThemeChange, autoFeedback, setAutoFeedback }: SettingsModalProps) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
@@ -24,6 +26,18 @@ export function SettingsModal({ open, onClose, theme, onThemeChange }: SettingsM
             <input id="theme-primary" type="color" value={theme.primary} onChange={(e) => onThemeChange({ primary: e.target.value })} className="w-20 h-8 rounded bg-zinc-800 border border-zinc-700" />
             <label htmlFor="theme-secondary">Secondary color</label>
             <input id="theme-secondary" type="color" value={theme.secondary} onChange={(e) => onThemeChange({ secondary: e.target.value })} className="w-20 h-8 rounded bg-zinc-800 border border-zinc-700" />
+          </section>
+          <section className="border border-zinc-800 rounded p-3 flex flex-col gap-2 text-sm">
+            <h3 className="font-medium text-zinc-200">Teaching feedback</h3>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoFeedback}
+                onChange={(e) => setAutoFeedback(e.target.checked)}
+                className="rounded bg-zinc-800 border border-zinc-700"
+              />
+              <span>Auto-generate feedback after each arrangement</span>
+            </label>
           </section>
           <section className="border border-zinc-800 rounded p-3">
             <LocalProviderCard />

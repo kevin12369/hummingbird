@@ -52,4 +52,15 @@ describe('Home page', () => {
     // module is wired up (catches circular imports, missing exports).
     expect(() => render(<Home />)).not.toThrow();
   });
+
+  it('shows Try sample button when in idle state', () => {
+    render(<Home />);
+    expect(screen.getByRole('button', { name: /try sample/i })).toBeTruthy();
+  });
+
+  it('smoke: FeedbackPanel integration does not throw in idle state', () => {
+    // FeedbackPanel is only rendered in 'ready' state, but the page should
+    // mount cleanly with the new useToast + autoFeedback wiring.
+    expect(() => render(<Home />)).not.toThrow();
+  });
 });
