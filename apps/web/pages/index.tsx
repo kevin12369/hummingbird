@@ -87,32 +87,31 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFeedback, state.status, state.feedback, state.feedbackError]);
 
-  function handleTrySample() {
-    // Hard-coded sample: 8-note C major scale fragment (placeholder notes).
-    // Real audio is fetched in Task 7; for now we just dispatch STOP_RECORDING
-    // with synthetic data so the existing useEffect picks it up and runs the
-    // full pipeline.
-    const sampleBlob = new Blob([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3])], { type: 'audio/webm' });
-    const sampleNotes: NoteEvent[] = [
-      { pitch: 60, onset: 0, duration: 0.5, velocity: 0.7 },
-      { pitch: 62, onset: 0.5, duration: 0.5, velocity: 0.7 },
-      { pitch: 64, onset: 1, duration: 0.5, velocity: 0.7 },
-      { pitch: 65, onset: 1.5, duration: 0.5, velocity: 0.7 },
-      { pitch: 67, onset: 2, duration: 1, velocity: 0.7 },
-      { pitch: 65, onset: 3, duration: 0.5, velocity: 0.7 },
-      { pitch: 64, onset: 3.5, duration: 0.5, velocity: 0.7 },
-      { pitch: 62, onset: 4, duration: 1, velocity: 0.7 },
-    ];
-    dispatch({ type: 'START_RECORDING' });
-    dispatch({
-      type: 'STOP_RECORDING',
-      blob: sampleBlob,
-      notes: sampleNotes,
-      key: 'C',
-      mode: 'major',
-      bpm: 120,
-      style: 'pop',
-    });
+  async function handleTrySample() {
+    // Fetch the demo audio + reference notes from the static samples/ dir.
+    // basePath is configured in next.config.js (matches GitHub Pages path).
+    const basePath = '/hummingbird';
+    try {
+      const audioRes = await fetch(`${basePath}/samples/humming-demo.webm`);
+      if (!audioRes.ok) throw new Error(`Sample audio fetch failed: ${audioRes.status}`);
+      const audioBlob = await audioRes.blob();
+      const notesRes = await fetch(`${basePath}/samples/humming-demo.json`);
+      if (!notesRes.ok) throw new Error(`Sample notes fetch failed: ${notesRes.status}`);
+      const sampleData = await notesRes.json();
+      dispatch({ type: 'START_RECORDING' });
+      dispatch({
+        type: 'STOP_RECORDING',
+        blob: audioBlob,
+        notes: sampleData.notes,
+        key: sampleData.key,
+        mode: sampleData.mode,
+        bpm: sampleData.bpm,
+        style: sampleData.style,
+      });
+      showToast({ severity: 'info', message: 'Sample loaded - running pipeline...' });
+    } catch (e) {
+      showToast({ severity: 'error', message: (e as Error).message });
+    }
   }
 
   async function handleRecordingComplete(blob: Blob) {

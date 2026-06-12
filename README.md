@@ -2,10 +2,10 @@
 
 > **你哼 30 秒,浏览器给你一首歌的 MIDI。/ Hum 30 seconds, get a 4-track MIDI in your browser.**
 
-[![Status](https://img.shields.io/badge/status-Phase_2_shipped-brightgreen)](#)
+[![Status](https://img.shields.io/badge/status-Phase_3_shipped-brightgreen)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue)](#)
 [![Stack](https://img.shields.io/badge/stack-GitHub_Pages-222?logo=github)](#)
-[![Tests](https://img.shields.io/badge/tests-142_passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-182_passing-brightgreen)](#)
 
 ---
 
@@ -16,6 +16,21 @@
 **让浏览器在 30 秒内把那段哼唱变成 4 轨 MIDI**:主旋律 + 和弦 + 贝斯 + 鼓。你哼完,Basic Pitch 帮你把音高扒下来,Krumhansl-Schmuckler 帮你识别调式,本地 LLM 帮你配和弦/写贝斯/排鼓点,`@tonejs/midi` 帮你拼成标准 MIDI 文件,浏览器直接播放 + 一键下载。
 
 > **不替你做音乐**——只帮你**把脑子里的哼唱变成可编辑的 MIDI 草稿**。后续调音色、混音、母带还是 DAW(Logic / Ableton / FL Studio)来做。
+
+---
+
+## Quick demo (无需麦克风)
+
+访问 [https://kevin12369.github.io/hummingbird/](https://kevin12369.github.io/hummingbird/),点击 **"Try sample"** 按钮即可看到完整的哼唱→MIDI 编排流程,无需录音或本地 LLM。
+
+完整 Loom 演示视频脚本(待录制):
+
+1. 打开 demo 站,展示空的 Recorder 界面
+2. 点击 **"Try sample"**,看到 5 风格选择器
+3. 点击 **"Jazz"**,看到 2-3 秒内生成新 MIDI
+4. 点击 **"Generate lyrics"** → **"中文"**,看到 2-3 秒内生成歌词
+5. 点击 **"Get feedback"**,看到 3-5 条反馈
+6. 点击 **"⬇ Download .mid"**,文件下载,可用 GarageBand 打开
 
 ---
 
@@ -98,6 +113,13 @@
 - [x] 写 `LyricsPanel`(i18n 切换 + 下载,失败回退不阻塞主流程)
 - [x] 集成到 `pages/index.tsx` + "Try another style" 按钮
 - [x] 写 README + 142 测试通过(Phase 2)
+- [x] 写 `packages/feedback`(教学反馈 Zod 校验 + LLM 编排)
+- [x] 扩 `WaveformView` + 新增 `PitchView`(音高轨迹,调内/调外/主音 3 色)
+- [x] 写 `FeedbackPanel`(3-5 条分类反馈,严重度配色)
+- [x] 写 `Toast` + `useToast` + `ErrorBoundary`(4 严重度 + 4s 自动消失)
+- [x] 集成到 `pages/index.tsx` + "Try sample" 按钮 + auto-feedback 设置
+- [x] `samples/` 目录 + Twinkle Twinkle demo 音频
+- [x] 写 README + 182 测试通过(Phase 3)
 
 ---
 
@@ -231,7 +253,7 @@
 
 **跑起来的数字**
 
-- **142** 测试通过(audio 15 + prompt 5 + llm 40 + midi 8 + lyrics 18 + web 56)
+- **182** 测试通过(audio 15 + prompt 5 + llm 40 + midi 8 + lyrics 18 + feedback 13 + web 83)
 - TypeScript strict + `noUncheckedIndexedAccess` 干净
 - 5 风格 prompt × 6 LLM provider × 5 packages/apps × 1 web app × 3 lyrics locale
 
@@ -245,7 +267,7 @@ pnpm dev            # = pnpm --filter @hummingbird/web dev, http://localhost:300
 **测试**
 
 ```bash
-pnpm test          # 142 tests across 6 packages
+pnpm test          # 182 tests across 7 packages
 pnpm -r exec tsc --noEmit   # strict typecheck
 ```
 
