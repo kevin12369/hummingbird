@@ -1,5 +1,5 @@
 import { Midi } from '@tonejs/midi';
-import type { NoteEvent, Arrangement } from './types';
+import type { NoteEvent, Arrangement, AssembleInput } from './types';
 
 const GM_DRUM_MAP: Record<number, number> = {
   1: 36,  // kick (bass drum 1)
@@ -25,12 +25,13 @@ function velocityToMidi(v: number): number {
   return Math.max(1, Math.min(127, Math.round(v * 127)));
 }
 
-export async function assembleMidi(input: { notes: NoteEvent[]; arrangement: Arrangement }): Promise<Uint8Array> {
-  const { notes, arrangement } = input;
+export async function assembleMidi(input: AssembleInput): Promise<Uint8Array> {
+  const { notes, arrangement, lyrics } = input;
   const midi = new Midi();
   midi.header.setTempo(arrangement.bpm);
   // 4/4 time, 4 quarter notes per bar
   midi.header.timeSignatures = [{ ticks: 0, timeSignature: [4, 4] }];
+  const secondsPerBeat = 60 / arrangement.bpm;
 
   // Track 0: melody
   const melodyTrack = midi.addTrack();
@@ -50,7 +51,6 @@ export async function assembleMidi(input: { notes: NoteEvent[]; arrangement: Arr
   const chordTrack = midi.addTrack();
   chordTrack.name = 'chords';
   const beatsPerChord = 4;
-  const secondsPerBeat = 60 / arrangement.bpm;
   // Map Roman numerals to notes for C major; the actual mapping requires the key,
   // but for now we use the bass line notes as chord roots
   for (let i = 0; i < arrangement.chordProgression.length; i++) {
@@ -104,6 +104,23 @@ export async function assembleMidi(input: { notes: NoteEvent[]; arrangement: Arr
       duration: secondsPerBeat * 0.5,
       velocity: 0.7,
     });
+  }
+
+  // Track 4: lyrics (optional) — dedicated track + meta events on the conductor
+  if (lyrics && lyrics.length > 0) {
+    const lyricsTrack = midi.addTrack();
+    lyricsTrack.name = 'lyrics';
+    // Estimate total song length = 4 bars * 4 beats
+    const totalBeats = 4 * 4;
+    const totalSeconds = totalBeats * secondsPerBeat;
+    // Push each line as a 'lyrics' meta event in the conductor (header.meta)
+    // so DAWs and parsers that read the file can see them with proper ticks.
+    for (let i = 0; i < lyrics.length; i++) {
+      const line = lyrics[i]!;
+      const timeOffset = (i / lyrics.length) * totalSeconds;
+      const ticks = midi.header.secondsToTicks(timeOffset);
+      midi.header.meta.push({ type: 'lyrics', text: line.text, ticks });
+    }
   }
 
   return midi.toArray();

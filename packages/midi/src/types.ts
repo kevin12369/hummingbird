@@ -5,9 +5,19 @@ export interface NoteEvent {
   velocity: number;
 }
 
+export interface LyricLine {
+  text: string;
+}
+
 export interface Arrangement {
   chordProgression: string[];     // Roman numerals (4 chords)
   bassLine: string[];             // 8 notes, "C2" format
   drumPattern: number[];           // 16 steps (0 = rest, 1 = kick, 2 = snare, 3 = hat)
   bpm: number;
+}
+
+export interface AssembleInput {
+  notes: NoteEvent[];
+  arrangement: Arrangement;
+  lyrics?: LyricLine[];
 }
