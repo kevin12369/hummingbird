@@ -1,2 +1,3 @@
 export { assembleMidi } from './assembler';
-export type { NoteEvent, Arrangement } from './types';
+export { splitStems } from './split-stems';
+export type { NoteEvent, Arrangement, AssembleInput } from './types';
