@@ -41,6 +41,10 @@ pnpm dev
 # open http://localhost:3000/hummingbird
 ```
 
+## 6. 下载小样 (可选)
+
+在主页 ready 状态,点 "Download .mp3" 即可拿到 30s 完整混音 + "Download 4 stems" 拿到 4 个分轨 MIDI。
+
 ## What you'll see
 
 - A live demo of 哼唱 → 4-track MIDI 编曲

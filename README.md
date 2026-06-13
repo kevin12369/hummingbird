@@ -1,6 +1,6 @@
-# Hummingbird · 哼唱编曲
+# 哼唱编曲 · Hummingbird
 
-> **你哼 30 秒,浏览器给你一首歌的 MIDI。/ Hum 30 seconds, get a 4-track MIDI in your browser.**
+> **30 秒从哼唱到一首能发的小样。/ Hum 30 seconds, get a shareable 30s MP3 sample.**
 
 [![Tests](https://img.shields.io/badge/tests-185_passing-brightgreen)](#)
 [![CI](https://github.com/kevin12369/hummingbird/actions/workflows/ci.yml/badge.svg)](https://github.com/kevin12369/hummingbird/actions/workflows/ci.yml)
@@ -42,6 +42,12 @@ See the **[portfolio page](https://kevin12369.github.io/hummingbird/portfolio/)*
 4. 点击 **"Generate lyrics"** → **"中文"**,看到 2-3 秒内生成歌词
 5. 点击 **"Get feedback"**,看到 3-5 条反馈
 6. 点击 **"⬇ Download .mid"**,文件下载,可用 GarageBand 打开
+
+---
+
+## 12 风格
+
+[图片:12 风格轮播 — 占位]
 
 ---
 

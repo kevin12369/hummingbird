@@ -9,7 +9,8 @@
     "build": "pnpm --filter @hummingbird/web build",
     "build:web": "pnpm --filter @hummingbird/web build",
     "test": "pnpm -r test",
-    "test:e2e": "echo 'E2E skipped in static deploy' && exit 0"
+    "test:e2e": "echo 'E2E skipped in static deploy' && exit 0",
+    "lint:license": "node scripts/generate-third-party-notices.mjs"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
