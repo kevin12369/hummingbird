@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Recorder } from '../components/Recorder';
 import { WaveformView } from '../components/WaveformView';
 import { KeyDisplay } from '../components/KeyDisplay';
@@ -234,6 +235,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col">
       <header className="px-4 py-3 flex items-center border-b border-zinc-800">
         <h1 className="text-lg font-semibold">Hummingbird (哼哼编曲)</h1>
+        <Link href="/hummingbird/portfolio" className="ml-4 text-sm text-zinc-400 hover:text-zinc-200">About</Link>
         <button type="button" onClick={() => setSettingsOpen(true)} className="ml-auto text-xl" aria-label="Open settings ⚙">⚙</button>
       </header>
       <main className="flex-1 p-6 max-w-3xl mx-auto flex flex-col gap-6">
