@@ -8,13 +8,18 @@ import type { NoteEvent } from './types';
 //   noteFramesToTime(notes) -> NoteEventTime[] (with startTimeSeconds, durationSeconds).
 let cachedModel: any = null;
 
+// BasicPitch v1.0.1 requires a URL pointing to a TF.js graph-model.json.
+// We copy the bundled model (node_modules/@spotify/basic-pitch/model/) into
+// apps/web/public/basic-pitch/ at build time so it's served by Next.js's
+// static export at the same path on GitHub Pages.
+// Passing '' would cause tf.loadGraphModel('') to throw
+// "URL path for http must not be null, undefined or empty".
+const MODEL_URL = '/basic-pitch/model.json';
+
 async function getModel() {
   if (cachedModel) return cachedModel;
   const { BasicPitch } = await import('@spotify/basic-pitch');
-  // The default Basic Pitch model is hosted by the library. Passing a model instance
-  // is the v1.0.1 contract; the library will lazy-load TF.js and the model weights.
-  // The empty path string tells BasicPitch to use its built-in default.
-  cachedModel = new BasicPitch('');
+  cachedModel = new BasicPitch(MODEL_URL);
   return cachedModel;
 }
 
