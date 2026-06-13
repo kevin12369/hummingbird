@@ -2,10 +2,21 @@
 
 > **你哼 30 秒,浏览器给你一首歌的 MIDI。/ Hum 30 seconds, get a 4-track MIDI in your browser.**
 
-[![Status](https://img.shields.io/badge/status-Phase_3_shipped-brightgreen)](#)
-[![License](https://img.shields.io/badge/license-MIT-blue)](#)
-[![Stack](https://img.shields.io/badge/stack-GitHub_Pages-222?logo=github)](#)
-[![Tests](https://img.shields.io/badge/tests-182_passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-185_passing-brightgreen)](#)
+[![CI](https://github.com/kevin12369/hummingbird/actions/workflows/ci.yml/badge.svg)](https://github.com/kevin12369/hummingbird/actions/workflows/ci.yml)
+[![Deploy](https://img.shields.io/badge/deploy-live-brightgreen)](https://kevin12369.github.io/hummingbird/)
+
+---
+
+## About this project
+
+哼哼编曲 · Hummingbird is a 30-second hum → 4-track MIDI arranger that runs entirely in the browser.
+
+See the **[portfolio page](https://kevin12369.github.io/hummingbird/portfolio/)** for screenshots, what it does, and how to run it locally.
+
+- **Live demo**: [https://kevin12369.github.io/hummingbird/](https://kevin12369.github.io/hummingbird/) (Try-sample works without LLM on github.io)
+- **Source code**: [github.com/kevin12369/hummingbird](https://github.com/kevin12369/hummingbird)
+- **Run locally**: [RUN-LOCALLY.md](docs/RUN-LOCALLY.md) — 5 steps, ~10 min
 
 ---
 
