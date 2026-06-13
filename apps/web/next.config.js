@@ -6,5 +6,5 @@ module.exports = {
   trailingSlash: true,
   images: { unoptimized: true },
   reactStrictMode: true,
-  transpilePackages: ['@hummingbird/audio', '@hummingbird/midi', '@hummingbird/prompt', '@hummingbird/llm'],
+  transpilePackages: ['@hummingbird/audio', '@hummingbird/midi', '@hummingbird/prompt', '@hummingbird/llm', '@hummingbird/render'],
 };

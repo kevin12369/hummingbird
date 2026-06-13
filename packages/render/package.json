@@ -4,6 +4,18 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./render.worker.ts": "./src/render.worker.ts",
+    "./render-core": "./src/render-core.ts",
+    "./encode-mp3-core": "./src/encode-mp3-core.ts",
+    "./encode-wav": "./src/encode-wav.ts",
+    "./styles": "./src/styles.ts",
+    "./presets": "./src/presets.ts",
+    "./types": "./src/types.ts",
+    "./arrangement-schema": "./src/arrangement-schema.ts",
+    "./fallback-arrange": "./src/fallback-arrange.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
