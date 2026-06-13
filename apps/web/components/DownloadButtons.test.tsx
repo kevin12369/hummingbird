@@ -12,14 +12,16 @@ vi.mock('../lib/render-client', async () => {
   };
 });
 
-const fakePreset = {
+import type { StylePreset } from '@hummingbird/render';
+
+const fakePreset: StylePreset = {
   id: 'pop',
   name: 'Pop',
   nameZh: '流行',
   melody: { layers: [], bpmRange: [95, 128] },
   harmony: { layers: [], bpmRange: [95, 128] },
   bass: { layers: [], bpmRange: [95, 128] },
-  drums: { layers: [], bpmRange: [95, 128], drumMap: 'standard' as const },
+  drums: { layers: [], bpmRange: [95, 128], drumMap: 'standard' },
   fx: { reverbSendDb: -20, lowpassCutoffHz: 18000, swingPercent: 0, sidechainDb: null, vinylNoise: false, halfTimeClosedHat: false, sliding808: false, longReverb: false, slapArticulation: false, supersawLayer: false, highFreqShimmer: false, brightStab: false },
 };
 

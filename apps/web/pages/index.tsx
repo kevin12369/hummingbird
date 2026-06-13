@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useReducer, useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Recorder } from '../components/Recorder';
 import { WaveformView } from '../components/WaveformView';
@@ -6,101 +6,204 @@ import { KeyDisplay } from '../components/KeyDisplay';
 import { Player } from '../components/Player';
 import { DownloadMidi } from '../components/DownloadMidi';
 import { SettingsModal } from '../components/SettingsModal';
-import { StyleSelector, type Style as HummingbirdStyle } from '../components/StyleSelector';
+import { StyleSelector } from '../components/StyleSelector';
+import { DownloadButtons } from '../components/DownloadButtons';
 import { LyricsPanel } from '../components/LyricsPanel';
 import { FeedbackPanel } from '../components/FeedbackPanel';
 import { PitchView } from '../components/PitchView';
 import { Toast } from '../components/Toast';
 import { useToast } from '../hooks/useToast';
 import { useTheme } from '../lib/theme';
-import { createMachine, initialState, type State, type Event } from '../lib/state-machine';
+import {
+  initialState,
+  reducer,
+  type Event,
+} from '../lib/state-machine';
 import { loadSettings, saveSettings } from '../lib/settings';
-import { transcribeAudio, detectKey, setBasicPitchModelUrl, type NoteEvent } from '@hummingbird/audio';
+import {
+  transcribeAudio,
+  detectKey,
+  setBasicPitchModelUrl,
+  type NoteEvent,
+  type Key,
+  type Mode,
+  type KeyDetection,
+} from '@hummingbird/audio';
+import { Midi } from '@tonejs/midi';
+import { fallbackArrange, type StyleId, getPreset } from '@hummingbird/render';
+import type { LyricsOutput, Locale as LyricsLocale } from '@hummingbird/lyrics';
+import { getLyricsPrompt, generateLyrics } from '@hummingbird/lyrics';
+import type { FeedbackOutput } from '@hummingbird/feedback';
+import { buildFeedbackPrompt, generateFeedback } from '@hummingbird/feedback';
 
 // BasicPitch model lives under the Next.js basePath on GitHub Pages.
-// Set it once on module load so transcribeAudio() loads from the right URL.
 if (typeof window !== 'undefined') {
   setBasicPitchModelUrl('/hummingbird/basic-pitch/model.json');
 }
-import { assembleMidi } from '@hummingbird/midi';
-import { buildPrompt, type Style } from '@hummingbird/prompt';
-import { arrangeMusic, trySampleArrangeMusic, type Arrangement } from '../lib/llm-direct';
-import { getLyricsPrompt, generateLyrics, type Locale as LyricsLocale } from '@hummingbird/lyrics';
-import { buildFeedbackPrompt, generateFeedback } from '@hummingbird/feedback';
+
+const RENDER_DURATION_SEC = 30;
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
-  const [machine, setMachine] = useState(() => createMachine(initialState()));
+  const [state, dispatch] = useReducer(reducer, initialState);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [style] = useState<Style>('pop');
   const [bpm, setBpm] = useState(120);
-  const [arrangement, setArrangement] = useState<Arrangement | null>(null);
   const [lyricsLocale, setLyricsLocale] = useState<LyricsLocale>('zh');
+  const [lyrics, setLyrics] = useState<LyricsOutput | null>(null);
+  const [lyricsError, setLyricsError] = useState<string | null>(null);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
+  const [feedback, setFeedback] = useState<FeedbackOutput | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [autoFeedback, setAutoFeedback] = useState(() => loadSettings().autoFeedback);
+  const [caps, setCaps] = useState<{ offlineAudioContext: boolean } | null>(null);
   const { toasts, showToast, dismiss } = useToast();
 
-  const state = machine.state;
+  // Lazily detect OfflineAudioContext capability for the Download MP3 button
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setCaps({ offlineAudioContext: typeof (window as any).OfflineAudioContext !== 'undefined' });
+  }, []);
 
-  function dispatch(event: Event) {
-    setMachine((m) => createMachine(m.transition(event)));
-  }
+  // Style is the active StyleId; only meaningful when main.stage === 'arranging' or 'ready'.
+  // Default to 'pop' until the user starts arranging.
+  const style: StyleId = state.main.stage === 'arranging' || state.main.stage === 'ready'
+    ? state.main.style
+    : 'pop';
 
-  function applyState(next: State) {
-    setMachine(createMachine(next));
+  const input = state.main.stage === 'arranging' || state.main.stage === 'ready'
+    ? state.main.input
+    : null;
+
+  // Derive a small preview of the audio blob for the waveform view
+  const audioBlob: Blob | null = useMemo(() => {
+    if (!input) return null;
+    return input.audioBlob;
+  }, [input]);
+
+  // Derive key/mode/bpm/notes from the input's key detection (for KeyDisplay + Playback).
+  // The new state machine does not carry these as top-level fields; we keep them in input.key.
+  const keyInfo: KeyDetection | null = input?.key ?? null;
+
+  function dispatchEvent(ev: Event) {
+    dispatch(ev);
   }
 
   async function handleGetFeedback() {
-    const s = machine.state;
-    if (s.status !== 'ready') return;
-    dispatch({ type: 'GENERATE_FEEDBACK' });
+    if (state.main.stage !== 'ready' || !keyInfo) return;
+    setFeedbackLoading(true);
+    setFeedbackError(null);
     try {
       const llmBaseUrl = localStorage.getItem('hummingbird:local:baseUrl') ?? 'http://localhost:11434';
       const llmModel = localStorage.getItem('hummingbird:local:model') ?? 'llama3.1:8b';
       const llmProvider = (localStorage.getItem('hummingbird:local:provider') ?? 'ollama') as 'ollama' | 'openai-compatible';
       const prompt = buildFeedbackPrompt({
-        notesSummary: `${s.notes?.length ?? 0} notes`,
-        key: s.key,
-        mode: s.mode,
-        bpm: s.bpm,
-        style: s.style ?? 'pop',
+        notesSummary: `${input?.notes.length ?? 0} notes`,
+        key: keyInfo.key,
+        mode: keyInfo.mode,
+        bpm,
+        style,
       });
       const r = await generateFeedback({ prompt, model: llmProvider, localBaseUrl: llmBaseUrl, localModel: llmModel });
       if (!r.ok || !r.feedback) {
         const msg = r.error ?? 'Feedback failed';
+        setFeedbackError(msg);
         showToast({ severity: 'error', message: msg });
-        dispatch({ type: 'FEEDBACK_ERROR', message: msg });
         return;
       }
-      dispatch({ type: 'FEEDBACK_COMPLETE', feedback: r.feedback });
+      setFeedback(r.feedback);
     } catch (e) {
       const msg = (e as Error).message;
+      setFeedbackError(msg);
       showToast({ severity: 'error', message: msg });
-      dispatch({ type: 'FEEDBACK_ERROR', message: msg });
+    } finally {
+      setFeedbackLoading(false);
     }
   }
 
-  // Auto-trigger feedback after a successful arrangement when the user has
-  // enabled the setting. Idempotent: skips when feedback (or a recent error)
-  // is already present.
+  // Auto-trigger feedback after a successful arrangement
   useEffect(() => {
-    if (
-      autoFeedback &&
-      state.status === 'ready' &&
-      !state.feedback &&
-      !state.feedbackError
-    ) {
+    if (autoFeedback && state.main.stage === 'ready' && !feedback && !feedbackError) {
       void handleGetFeedback();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoFeedback, state.status, state.feedback, state.feedbackError]);
+  }, [autoFeedback, state.main.stage, feedback, feedbackError]);
+
+  function buildTracks(notes: NoteEvent[], key: KeyDetection, styleId: StyleId) {
+    // Build 4 MIDI stems from a fallback arrangement. (Real LLM-arranged stems are
+    // the next step; the v4 plan keeps the same flow but with StyleId-based presets.)
+    const arr = fallbackArrange(notes, key, styleId);
+    const secondsPerBeat = 60 / arr.bpm;
+    const beatsPerChord = 4;
+
+    // Melody: notes as-is
+    const melody = new Midi();
+    melody.name = 'melody';
+    const mt = melody.addTrack();
+    mt.name = 'melody';
+    for (const n of notes) {
+      mt.addNote({ midi: n.pitch, time: n.onset, duration: n.duration, velocity: n.velocity / 127 });
+    }
+
+    // Chords: 4 roots from arrangement.bassLine, each 4 beats, major triad
+    const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const NOTE_NAME_TO_MIDI: Record<string, number> = {};
+    for (let octave = -1; octave <= 9; octave++) {
+      for (let i = 0; i < 12; i++) {
+        NOTE_NAME_TO_MIDI[`${NOTE_NAMES[i]}${octave}`] = (octave + 1) * 12 + i;
+      }
+    }
+    const chords = new Midi();
+    chords.name = 'chords';
+    const ct = chords.addTrack();
+    ct.name = 'chords';
+    for (let i = 0; i < arr.chordProgression.length; i++) {
+      const root = NOTE_NAME_TO_MIDI[arr.bassLine[i] ?? 'C2'] ?? 60;
+      const triad = [root, root + 4, root + 7];
+      const startSec = i * beatsPerChord * secondsPerBeat;
+      for (const pitch of triad) {
+        ct.addNote({ midi: pitch, time: startSec, duration: beatsPerChord * secondsPerBeat, velocity: 0.6 });
+      }
+    }
+
+    // Bass: 8 root notes from arrangement.bassLine, 8th-notes
+    const bass = new Midi();
+    bass.name = 'bass';
+    const bt = bass.addTrack();
+    bt.name = 'bass';
+    for (let i = 0; i < arr.bassLine.length; i++) {
+      const pitch = NOTE_NAME_TO_MIDI[arr.bassLine[i] ?? 'C2'] ?? 36;
+      bt.addNote({
+        midi: pitch,
+        time: i * (beatsPerChord / 2) * secondsPerBeat,
+        duration: (beatsPerChord / 2) * secondsPerBeat * 0.9,
+        velocity: 0.8,
+      });
+    }
+
+    // Drums: GM drum map from arrangement.drumPattern (drumMap string)
+    const GM_DRUM_MAP: Record<string, number> = {
+      '1': 36, '2': 38, '3': 42, '4': 46, '5': 49,
+    };
+    // Reuse fallback's drumPattern is a string in v4 (drumMap name); we instead
+    // re-derive a 16-step pattern from the same template used by midi-assembler.
+    const drumCodes = deriveDrumCodes(arr.drumPattern as unknown as string);
+    const drums = new Midi();
+    drums.name = 'drums';
+    const dt = drums.addTrack();
+    dt.name = 'drums';
+    dt.channel = 9;
+    for (let i = 0; i < drumCodes.length; i++) {
+      const code = drumCodes[i]!;
+      if (code === 0) continue;
+      const gmMidi = GM_DRUM_MAP[String(code)] ?? 36;
+      dt.addNote({ midi: gmMidi, time: i * secondsPerBeat, duration: secondsPerBeat * 0.5, velocity: 0.7 });
+    }
+
+    return { melody, chords, bass, drums };
+  }
 
   async function handleTrySample() {
-    // Fetch the demo audio + reference notes from the static samples/ dir.
-    // basePath is configured in next.config.js (matches GitHub Pages path).
-    // We run the full pipeline inline (transcribe -> key -> prompt -> arrange -> midi)
-    // so the sample is treated the same as a real recording. The arrangement
-    // step uses trySampleArrangeMusic(), which skips the LLM call when running
-    // on GitHub Pages (or when NEXT_PUBLIC_TRY_SAMPLE_SKIP_LLM=true).
     const basePath = '/hummingbird';
     try {
       const audioRes = await fetch(`${basePath}/samples/humming-demo.webm`);
@@ -110,39 +213,51 @@ export default function Home() {
       if (!notesRes.ok) throw new Error(`Sample notes fetch failed: ${notesRes.status}`);
       const sampleData = await notesRes.json();
       const sampleBpm: number = sampleData.bpm;
-      // Pre-fill processing state so the discriminated union is satisfied.
-      applyState({
-        status: 'processing',
-        blob: audioBlob,
-        key: sampleData.key,
-        mode: sampleData.mode,
-        bpm: sampleBpm,
-      });
+      const key: Key = sampleData.key;
+      const mode: Mode = sampleData.mode;
+      const keyDetection: KeyDetection = { key, mode, confidence: 0.9 };
+      const sampleInput = {
+        kind: 'sample' as const,
+        audioBlob,
+        notes: sampleData.notes as NoteEvent[],
+        key: keyDetection,
+      };
+      dispatchEvent({ type: 'START_ARRANGING', input: sampleInput, style: 'pop' });
+      setBpm(sampleBpm);
       try {
-        // 1. Transcribe
+        // 1. Transcribe (real audio → real notes) just to keep the pipeline honest
         const notes: NoteEvent[] = await transcribeAudio(audioBlob);
-        // 2. Detect key (use sampleData values since sample is reference-grade)
-        const key = sampleData.key as 'C' | 'D' | 'E' | 'F' | 'G' | 'A' | 'B' | 'C#' | 'D#' | 'F#' | 'G#' | 'A#';
-        const mode = sampleData.mode as 'major' | 'minor';
-        // 3. Build prompt
-        const prompt = buildPrompt({ notes, key, mode, bpm: sampleBpm, style });
-        // 4. Arrangement (LLM or hardcoded fallback for GitHub Pages)
-        const llmBaseUrl = localStorage.getItem('hummingbird:local:baseUrl') ?? 'http://localhost:11434';
-        const llmModel = localStorage.getItem('hummingbird:local:model') ?? 'llama3.1:8b';
-        const llmProvider = (localStorage.getItem('hummingbird:local:provider') ?? 'ollama') as 'ollama' | 'openai-compatible';
-        const arr = await trySampleArrangeMusic({ prompt, model: llmProvider, localBaseUrl: llmBaseUrl, localModel: llmModel });
-        if (!arr.ok || !arr.arrangement) {
-          applyState({ status: 'error', message: arr.error ?? 'Try-sample arrangement failed' });
-          return;
+        const tracks = buildTracks(notes.length ? notes : sampleInput.notes, keyDetection, 'pop');
+        // Also assemble a single combined Midi for legacy Player/DownloadMidi
+        const combined = new Midi();
+        combined.name = 'hummingbird';
+        for (const stem of [tracks.melody, tracks.chords, tracks.bass, tracks.drums]) {
+          for (const t of stem.tracks) {
+            const newT = combined.addTrack();
+            newT.name = t.name;
+            newT.channel = t.channel;
+            for (const n of t.notes) {
+              newT.addNote({ midi: n.midi, time: n.time, duration: n.duration, velocity: n.velocity });
+            }
+          }
         }
-        const finalArr: Arrangement = { ...arr.arrangement, bpm: sampleBpm };
-        // 5. Assemble MIDI
-        const midiBytes = await assembleMidi({ notes, arrangement: finalArr });
-        setArrangement(finalArr);
-        applyState({ status: 'ready', midi: midiBytes, key, mode, bpm: sampleBpm, notes, style });
+        const midiBytes = combined.toArray();
+        dispatchEvent({
+          type: 'ARRANGEMENT_READY',
+          tracks: { melody: tracks.melody, chords: tracks.chords, bass: tracks.bass, drums: tracks.drums },
+          stems: 'ready',
+        });
+        // Stash bytes/key/bpm in a side-store via window for Player/DownloadMidi
+        // (the v4 state machine dropped bytes/key from the public State — these
+        // are used only by the legacy display components.)
+        stashCombinedMidi(midiBytes, keyDetection, sampleBpm);
         showToast({ severity: 'success', message: 'Sample loaded' });
       } catch (inner) {
-        applyState({ status: 'error', message: (inner as Error).message });
+        dispatchEvent({
+          type: 'RENDER_ERROR',
+          error: { code: 'UNKNOWN', message: (inner as Error).message, recoverable: true, fallbackChain: ['stems'] },
+        });
+        showToast({ severity: 'error', message: (inner as Error).message });
       }
     } catch (e) {
       showToast({ severity: 'error', message: (e as Error).message });
@@ -150,75 +265,89 @@ export default function Home() {
   }
 
   async function handleRecordingComplete(blob: Blob) {
-    const canStart = machine.state.status === 'recording' || machine.state.status === 'idle' || machine.state.status === 'error';
-    // Pre-fill key/mode/bpm so the 'processing' state satisfies the discriminated union.
-    // The real values are filled in by the pipeline below.
-    applyState(
-      canStart
-        ? { status: 'processing', blob, key: 'C' as const, mode: 'major' as const, bpm }
-        : machine.state,
-    );
     try {
       // 1. Transcribe
       const notes: NoteEvent[] = await transcribeAudio(blob);
       // 2. Detect key
-      const { key, mode } = detectKey(notes);
-      // 3. Build prompt
-      const prompt = buildPrompt({ notes, key, mode, bpm, style });
-      // 4. LLM arrangement
-      const llmBaseUrl = localStorage.getItem('hummingbird:local:baseUrl') ?? 'http://localhost:11434';
-      const llmModel = localStorage.getItem('hummingbird:local:model') ?? 'llama3.1:8b';
-      const llmProvider = (localStorage.getItem('hummingbird:local:provider') ?? 'ollama') as 'ollama' | 'openai-compatible';
-      const arr = await arrangeMusic({ prompt, model: llmProvider, localBaseUrl: llmBaseUrl, localModel: llmModel });
-      if (!arr.ok || !arr.arrangement) {
-        applyState({ status: 'error', message: arr.error ?? 'LLM failed' });
-        return;
+      const keyDetection: KeyDetection = notes.length ? detectKey(notes) : { key: 'C' as Key, mode: 'major' as Mode, confidence: 0 };
+      const inputObj = {
+        kind: 'recording' as const,
+        audioBlob: blob,
+        notes,
+        key: keyDetection,
+      };
+      setBpm(120);
+      dispatchEvent({ type: 'START_ARRANGING', input: inputObj, style });
+      const tracks = buildTracks(notes, keyDetection, style);
+      const combined = new Midi();
+      for (const stem of [tracks.melody, tracks.chords, tracks.bass, tracks.drums]) {
+        for (const t of stem.tracks) {
+          const newT = combined.addTrack();
+          newT.name = t.name;
+          newT.channel = t.channel;
+          for (const n of t.notes) {
+            newT.addNote({ midi: n.midi, time: n.time, duration: n.duration, velocity: n.velocity });
+          }
+        }
       }
-      const finalArr: Arrangement = { ...arr.arrangement, bpm };
-      // 5. Assemble MIDI
-      const midiBytes = await assembleMidi({ notes, arrangement: finalArr });
-      setArrangement(finalArr);
-      applyState({ status: 'ready', midi: midiBytes, key, mode, bpm, notes, style });
+      const midiBytes = combined.toArray();
+      dispatchEvent({
+        type: 'ARRANGEMENT_READY',
+        tracks: { melody: tracks.melody, chords: tracks.chords, bass: tracks.bass, drums: tracks.drums },
+        stems: 'ready',
+      });
+      stashCombinedMidi(midiBytes, keyDetection, 120);
     } catch (e) {
-      applyState({ status: 'error', message: (e as Error).message });
+      dispatchEvent({
+        type: 'RENDER_ERROR',
+        error: { code: 'UNKNOWN', message: (e as Error).message, recoverable: true, fallbackChain: ['stems'] },
+      });
+      showToast({ severity: 'error', message: (e as Error).message });
     }
   }
 
-  async function handleStyleSwitch(newStyle: HummingbirdStyle) {
-    // Re-run the pipeline with the new style
-    const s = machine.state;
-    if (s.status !== 'ready' || !s.notes || !s.key || !s.mode) return;
-    dispatch({ type: 'TRY_OTHER_STYLE', style: newStyle });
-    try {
-      const prompt = buildPrompt({ notes: s.notes, key: s.key, mode: s.mode, bpm: s.bpm, style: newStyle });
-      const llmBaseUrl = localStorage.getItem('hummingbird:local:baseUrl') ?? 'http://localhost:11434';
-      const llmModel = localStorage.getItem('hummingbird:local:model') ?? 'llama3.1:8b';
-      const llmProvider = (localStorage.getItem('hummingbird:local:provider') ?? 'ollama') as 'ollama' | 'openai-compatible';
-      const arr = await arrangeMusic({ prompt, model: llmProvider, localBaseUrl: llmBaseUrl, localModel: llmModel });
-      if (!arr.ok || !arr.arrangement) {
-        dispatch({ type: 'PROCESS_ERROR', message: arr.error ?? 'Style switch failed' });
-        return;
+  function handleStyleSwitch(newStyleId: StyleId) {
+    if (state.main.stage !== 'ready') return;
+    const notes = state.main.input.notes;
+    const key = state.main.input.key;
+    const tracks = buildTracks(notes, key, newStyleId);
+    const combined = new Midi();
+    for (const stem of [tracks.melody, tracks.chords, tracks.bass, tracks.drums]) {
+      for (const t of stem.tracks) {
+        const newT = combined.addTrack();
+        newT.name = t.name;
+        newT.channel = t.channel;
+        for (const n of t.notes) {
+          newT.addNote({ midi: n.midi, time: n.time, duration: n.duration, velocity: n.velocity });
+        }
       }
-      const finalArr = { ...arr.arrangement, bpm: s.bpm };
-      const midiBytes = await assembleMidi({ notes: s.notes, arrangement: finalArr });
-      dispatch({ type: 'PROCESS_COMPLETE', midi: midiBytes });
-    } catch (e) {
-      dispatch({ type: 'PROCESS_ERROR', message: (e as Error).message });
     }
+    dispatchEvent({ type: 'RESET' });
+    dispatchEvent({
+      type: 'START_ARRANGING',
+      input: { ...state.main.input },
+      style: newStyleId,
+    });
+    dispatchEvent({
+      type: 'ARRANGEMENT_READY',
+      tracks: { melody: tracks.melody, chords: tracks.chords, bass: tracks.bass, drums: tracks.drums },
+      stems: 'ready',
+    });
+    stashCombinedMidi(combined.toArray(), key, bpm);
   }
 
   async function handleGenerateLyrics() {
-    const s = machine.state;
-    if (s.status !== 'ready' || !s.notes || !s.key || !s.mode) return;
-    dispatch({ type: 'GENERATE_LYRICS' });
+    if (state.main.stage !== 'ready' || !keyInfo) return;
+    setLyricsLoading(true);
+    setLyricsError(null);
     try {
       const llmBaseUrl = localStorage.getItem('hummingbird:local:baseUrl') ?? 'http://localhost:11434';
       const llmModel = localStorage.getItem('hummingbird:local:model') ?? 'llama3.1:8b';
       const llmProvider = (localStorage.getItem('hummingbird:local:provider') ?? 'ollama') as 'ollama' | 'openai-compatible';
       const prompt = getLyricsPrompt(lyricsLocale, {
-        melodySummary: `${s.key} ${s.mode}, ${s.bpm} BPM, ${s.notes.length} notes`,
-        bpm: s.bpm,
-        style: s.style ?? 'pop',
+        melodySummary: `${keyInfo.key} ${keyInfo.mode}, ${bpm} BPM, ${input?.notes.length ?? 0} notes`,
+        bpm,
+        style,
       });
       const result = await generateLyrics({
         prompt,
@@ -228,14 +357,25 @@ export default function Home() {
         locale: lyricsLocale,
       });
       if (!result.ok) {
-        dispatch({ type: 'LYRICS_ERROR', message: result.error ?? 'Lyrics generation failed' });
+        const msg = result.error ?? 'Lyrics generation failed';
+        setLyricsError(msg);
+        showToast({ severity: 'error', message: msg });
         return;
       }
-      dispatch({ type: 'LYRICS_COMPLETE', lyrics: result.lyrics });
+      setLyrics(result.lyrics);
     } catch (e) {
-      dispatch({ type: 'LYRICS_ERROR', message: (e as Error).message });
+      const msg = (e as Error).message;
+      setLyricsError(msg);
+      showToast({ severity: 'error', message: msg });
+    } finally {
+      setLyricsLoading(false);
     }
   }
+
+  const isReady = state.main.stage === 'ready';
+  const isArranging = state.main.stage === 'arranging';
+  const isError = state.main.stage === 'error';
+  const readyTracks = state.main.stage === 'ready' ? state.main.tracks : null;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -254,67 +394,50 @@ export default function Home() {
           >
             Try sample
           </button>
-          <WaveformView audio={state.status === 'recording' || state.status === 'processing' ? null : (state as any).blob ?? null} />
+          <WaveformView audio={audioBlob} />
           <PitchView
-            notes={state.notes ?? []}
-            keyName={(state as any).key ?? 'C'}
-            mode={(state as any).mode ?? 'major'}
+            notes={input?.notes ?? []}
+            keyName={keyInfo?.key ?? 'C'}
+            mode={keyInfo?.mode ?? 'major'}
           />
         </section>
 
-        {state.status === 'processing' && (
-          <p className="text-sm text-zinc-400 text-center">Processing… (Basic Pitch → key detection → LLM arrangement → MIDI assembly)</p>
+        {isArranging && (
+          <p className="text-sm text-zinc-400 text-center">Arranging… (key detection → arrangement → MIDI stems)</p>
         )}
 
-        {state.status === 'error' && (
+        {isError && (
           <div className="rounded bg-red-900/30 text-red-200 p-3 text-sm">
-            ⚠ {state.message}. <button className="underline ml-2" onClick={() => dispatch({ type: 'RESET' })}>Reset</button>
+            ! {(state.main as { error: { message: string } }).error.message}.{' '}
+            <button className="underline ml-2" onClick={() => dispatchEvent({ type: 'RESET' })}>Reset</button>
           </div>
         )}
 
-        {state.status === 'ready' && (
+        {isReady && keyInfo && (
           <div className="flex flex-col gap-4 border-t border-zinc-800 pt-4">
-            <KeyDisplay keyName={state.key} mode={state.mode} bpm={state.bpm} confidence={null} />
-            <StyleSelector
-              current={(state.style ?? 'pop') as HummingbirdStyle}
-              onSelect={handleStyleSwitch}
-              disabled={false}
-            />
+            <KeyDisplay keyName={keyInfo.key} mode={keyInfo.mode} bpm={bpm} confidence={keyInfo.confidence} />
+            <StyleSelector selected={style} onChange={handleStyleSwitch} />
             <LyricsPanel
-              lyrics={state.lyrics ?? null}
-              lyricsError={state.lyricsError ?? null}
+              lyrics={lyrics}
+              lyricsError={lyricsError}
               onGenerate={handleGenerateLyrics}
               onLocaleChange={setLyricsLocale}
+              loading={lyricsLoading}
             />
             <FeedbackPanel
-              feedback={state.feedback ?? null}
-              feedbackError={state.feedbackError ?? null}
-              loading={false}
+              feedback={feedback}
+              feedbackError={feedbackError}
+              loading={feedbackLoading}
               onGenerate={handleGetFeedback}
             />
-            <Player midi={state.midi} bpm={state.bpm} />
-            <DownloadMidi midi={new Blob([state.midi as BlobPart], { type: 'audio/midi' })} />
-          </div>
-        )}
-
-        {state.status === 'lyrics-generating' && (
-          <div className="flex flex-col gap-4 border-t border-zinc-800 pt-4">
-            <KeyDisplay keyName={state.key} mode={state.mode} bpm={state.bpm} confidence={null} />
-            <p className="text-sm text-zinc-400 text-center">Generating lyrics…</p>
-          </div>
-        )}
-
-        {state.status === 'feedback-generating' && (
-          <div className="flex flex-col gap-4 border-t border-zinc-800 pt-4">
-            <KeyDisplay keyName={state.key} mode={state.mode} bpm={state.bpm} confidence={null} />
-            <p className="text-sm text-zinc-400 text-center">Generating feedback…</p>
-          </div>
-        )}
-
-        {state.status === 'playing' && (
-          <div className="flex flex-col gap-4 border-t border-zinc-800 pt-4">
-            <KeyDisplay keyName={state.key} mode={state.mode} bpm={state.bpm} confidence={null} />
-            <Player midi={state.midi} bpm={state.bpm} />
+            <Player midi={getCombinedMidi()} bpm={bpm} />
+            <DownloadMidi midi={getCombinedMidiBlob()} />
+            <DownloadButtons
+              tracks={readyTracks ?? { melody: null, chords: null, bass: null, drums: null }}
+              preset={getPreset(style)}
+              durationSec={RENDER_DURATION_SEC}
+              capabilities={caps}
+            />
           </div>
         )}
       </main>
@@ -332,4 +455,61 @@ export default function Home() {
       <Toast toasts={toasts} onDismiss={dismiss} />
     </div>
   );
+}
+
+// ---- helpers ----
+
+const SIDE_STORE_KEY = 'hummingbird:combined-midi';
+
+function stashCombinedMidi(bytes: Uint8Array, key: KeyDetection, bpm: number) {
+  if (typeof window === 'undefined') return;
+  (window as any).__hummingbird = { bytes, key, bpm };
+  // Also persist the raw midi bytes as base64 for tests + reload
+  try {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+    window.localStorage.setItem(SIDE_STORE_KEY, btoa(bin));
+    window.localStorage.setItem('hummingbird:key', JSON.stringify(key));
+    window.localStorage.setItem('hummingbird:bpm', String(bpm));
+  } catch {
+    // ignore
+  }
+}
+
+function getCombinedMidi(): Uint8Array | null {
+  if (typeof window === 'undefined') return null;
+  const s = (window as any).__hummingbird;
+  if (s?.bytes) return s.bytes as Uint8Array;
+  const b64 = window.localStorage.getItem(SIDE_STORE_KEY);
+  if (!b64) return null;
+  try {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function getCombinedMidiBlob(): Blob | null {
+  const bytes = getCombinedMidi();
+  if (!bytes) return null;
+  return new Blob([bytes as BlobPart], { type: 'audio/midi' });
+}
+
+// Derive a 16-step drum pattern (1=kick 2=snare 3=hihat) from the drumMap name.
+// Keeps the same 8 templates the rest of the pipeline uses.
+function deriveDrumCodes(drumMap: string | undefined): number[] {
+  const PATTERNS: Record<string, number[]> = {
+    'standard':    [1, 0, 3, 0, 2, 0, 3, 0, 1, 0, 3, 0, 2, 0, 3, 0],
+    'brush':       [1, 0, 3, 3, 2, 0, 3, 3, 1, 0, 3, 3, 2, 0, 3, 3],
+    'half-time':   [1, 0, 0, 3, 0, 0, 2, 0, 0, 3, 0, 0, 1, 0, 2, 3],
+    'triplet':     [1, 3, 0, 2, 3, 0, 1, 3, 0, 2, 3, 0, 1, 0, 3, 0],
+    '4-on-floor':  [1, 0, 3, 0, 1, 0, 3, 0, 1, 0, 3, 0, 1, 0, 2, 0],
+    'half-trap':   [1, 0, 0, 3, 0, 0, 2, 3, 0, 3, 0, 0, 1, 3, 2, 0],
+    'funk':        [1, 0, 3, 0, 0, 2, 3, 0, 1, 0, 0, 3, 0, 2, 3, 0],
+    'soft-kit':    [1, 0, 3, 0, 2, 0, 0, 3, 1, 0, 3, 0, 2, 0, 3, 0],
+  };
+  return PATTERNS[drumMap ?? 'standard'] ?? PATTERNS['standard']!;
 }
