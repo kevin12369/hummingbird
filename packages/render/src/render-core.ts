@@ -33,15 +33,21 @@ export async function renderCore(
   scheduleTrack(oac, tracks.bass,    preset.bass,    master, 0.0);
   scheduleTrack(oac, tracks.drums,   preset.drums,   master, 0.0);
 
-  // FX chain:lowpass
+  // FX chain:lowpass(rewire master)
   const lowpass = oac.createBiquadFilter();
   lowpass.type = 'lowpass';
   lowpass.frequency.value = preset.fx.lowpassCutoffHz;
-  // FX chain:mix insert(简化:reverb send 用 DelayNode 占位,后续接 ConvolverNode)
+  master.disconnect();
+  master.connect(lowpass);
+  lowpass.connect(oac.destination);
+  // FX chain:long reverb (feedback loop after lowpass)
   if (preset.fx.longReverb) {
     const delay = oac.createDelay(6);
     delay.delayTime.value = 0.05;
-    master.connect(delay).connect(master);
+    const sendGain = oac.createGain();
+    sendGain.gain.value = 0.3;
+    lowpass.connect(sendGain).connect(delay);
+    delay.connect(lowpass);
   }
 
   return await oac.startRendering();
