@@ -14,12 +14,22 @@ let cachedModel: any = null;
 // static export at the same path on GitHub Pages.
 // Passing '' would cause tf.loadGraphModel('') to throw
 // "URL path for http must not be null, undefined or empty".
-const MODEL_URL = '/basic-pitch/model.json';
+//
+// The host app may override the URL at startup via setBasicPitchModelUrl(),
+// e.g. when Next.js's basePath puts the site under a sub-path like
+// /hummingbird/. Default is a relative '/basic-pitch/model.json' which is
+// resolved against the document origin (suitable for root-deployed apps).
+let modelUrl = '/basic-pitch/model.json';
+
+export function setBasicPitchModelUrl(url: string): void {
+  modelUrl = url;
+  cachedModel = null; // invalidate cache so next call rebuilds with new URL
+}
 
 async function getModel() {
   if (cachedModel) return cachedModel;
   const { BasicPitch } = await import('@spotify/basic-pitch');
-  cachedModel = new BasicPitch(MODEL_URL);
+  cachedModel = new BasicPitch(modelUrl);
   return cachedModel;
 }
 

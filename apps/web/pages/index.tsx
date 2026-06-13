@@ -15,7 +15,13 @@ import { useToast } from '../hooks/useToast';
 import { useTheme } from '../lib/theme';
 import { createMachine, initialState, type State, type Event } from '../lib/state-machine';
 import { loadSettings, saveSettings } from '../lib/settings';
-import { transcribeAudio, detectKey, type NoteEvent } from '@hummingbird/audio';
+import { transcribeAudio, detectKey, setBasicPitchModelUrl, type NoteEvent } from '@hummingbird/audio';
+
+// BasicPitch model lives under the Next.js basePath on GitHub Pages.
+// Set it once on module load so transcribeAudio() loads from the right URL.
+if (typeof window !== 'undefined') {
+  setBasicPitchModelUrl('/hummingbird/basic-pitch/model.json');
+}
 import { assembleMidi } from '@hummingbird/midi';
 import { buildPrompt, type Style } from '@hummingbird/prompt';
 import { arrangeMusic, trySampleArrangeMusic, type Arrangement } from '../lib/llm-direct';
