@@ -1,225 +1,106 @@
-import type { Key, Mode, NoteEvent } from '@hummingbird/audio';
-import type { LyricsOutput } from '@hummingbird/lyrics';
-import type { FeedbackOutput } from '@hummingbird/feedback';
+import type { Midi } from '@tonejs/midi';
+import type { StyleId, RenderError } from '@hummingbird/render';
 
-export type Style = 'pop' | 'lo-fi' | 'jazz' | 'rock' | 'classical';
+export type Input = RecordingInput | TrySampleInput;
 
-interface BaseState {
-  notes?: NoteEvent[];
-  blob?: Blob;
-  targetStyle?: Style;
-  lyrics?: LyricsOutput;
-  lyricsError?: string;
-  feedback?: FeedbackOutput;
-  feedbackError?: string;
+export interface RecordingInput {
+  kind: 'recording';
+  audioBlob: Blob;
+  notes: import('@hummingbird/audio').NoteEvent[];
+  key: import('@hummingbird/audio').KeyDetection;
 }
 
-export type State =
-  | ({ status: 'idle' } & BaseState)
-  | ({ status: 'recording'; startedAt?: number } & BaseState)
-  | ({ status: 'processing'; blob: Blob; key: Key; mode: Mode; bpm: number } & BaseState)
-  | ({ status: 'ready'; midi: Uint8Array; key: Key; mode: Mode; bpm: number; style?: Style } & BaseState)
-  | ({ status: 'playing'; midi: Uint8Array; key: Key; mode: Mode; bpm: number; style?: Style } & BaseState)
-  | ({ status: 'lyrics-generating'; midi: Uint8Array; key: Key; mode: Mode; bpm: number; style?: Style } & BaseState)
-  | ({ status: 'feedback-generating'; midi: Uint8Array; key: Key; mode: Mode; bpm: number; style?: Style } & BaseState)
-  | ({ status: 'error'; message: string } & BaseState);
+export interface TrySampleInput {
+  kind: 'sample';
+  audioBlob: Blob;
+  // Try-sample 无 notes,fallback-arrange 用预设
+  notes: import('@hummingbird/audio').NoteEvent[];
+  key: import('@hummingbird/audio').KeyDetection;
+}
+
+export type MainState =
+  | { stage: 'idle' }
+  | { stage: 'arranging'; input: Input; style: StyleId }
+  | { stage: 'ready'; input: Input; style: StyleId; tracks: { melody: Midi; chords: Midi; bass: Midi; drums: Midi } }
+  | { stage: 'error'; error: RenderError };
+
+export type StemsStatus = 'idle' | 'ready' | 'error';
+
+export type RenderStatus =
+  | 'idle'
+  | 'queued'
+  | 'rendering'
+  | 'rendered'
+  | 'error';
+
+export type Progress = number;  // 0-1
+
+export interface State {
+  main: MainState;
+  stems: StemsStatus;
+  render: RenderStatus;
+  progress: Progress;
+  format?: 'mp3' | 'wav';
+  bytes?: Uint8Array;
+}
+
+export const initialState: State = {
+  main: { stage: 'idle' },
+  stems: 'idle',
+  render: 'idle',
+  progress: 0,
+};
 
 export type Event =
-  | { type: 'START_RECORDING' }
-  | { type: 'STOP_RECORDING'; blob: Blob; notes: NoteEvent[]; key: Key; mode: Mode; bpm: number; style: Style }
-  | { type: 'PROCESS_COMPLETE'; midi: Uint8Array }
-  | { type: 'PROCESS_ERROR'; message: string }
-  | { type: 'PLAY' }
-  | { type: 'STOP' }
-  | { type: 'RESET' }
-  | { type: 'GENERATE_LYRICS' }
-  | { type: 'LYRICS_COMPLETE'; lyrics: LyricsOutput }
-  | { type: 'LYRICS_ERROR'; message: string }
-  | { type: 'TRY_OTHER_STYLE'; style: Style }
-  | { type: 'GENERATE_FEEDBACK' }
-  | { type: 'FEEDBACK_COMPLETE'; feedback: FeedbackOutput }
-  | { type: 'FEEDBACK_ERROR'; message: string };
+  | { type: 'START_ARRANGING'; input: Input; style: StyleId }
+  | { type: 'ARRANGEMENT_READY'; tracks: { melody: Midi; chords: Midi; bass: Midi; drums: Midi }; stems: StemsStatus }
+  | { type: 'STEMS_READY' }
+  | { type: 'STEMS_ERROR'; error: RenderError }
+  | { type: 'RENDER_QUEUED' }
+  | { type: 'RENDER_STARTED' }
+  | { type: 'RENDER_PROGRESS'; progress: Progress }
+  | { type: 'RENDER_DONE'; bytes: Uint8Array; format: 'mp3' | 'wav' }
+  | { type: 'RENDER_ERROR'; error: RenderError }
+  | { type: 'CANCEL' }
+  | { type: 'RESET' };
 
-export function initialState(): State {
-  return { status: 'idle' };
-}
-
-export function createMachine(state: State) {
-  return {
-    state,
-    transition(event: Event): State {
-      switch (event.type) {
-        case 'START_RECORDING':
-          if (state.status === 'idle' || state.status === 'error') {
-            return { status: 'recording', startedAt: Date.now() };
-          }
-          return state;
-        case 'STOP_RECORDING':
-          if (state.status === 'recording') {
-            return {
-              status: 'processing',
-              blob: event.blob,
-              notes: event.notes,
-              key: event.key,
-              mode: event.mode,
-              bpm: event.bpm,
-              targetStyle: event.style,
-            };
-          }
-          return state;
-        case 'PROCESS_COMPLETE':
-          if (state.status === 'processing') {
-            return {
-              status: 'ready',
-              midi: event.midi,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              style: state.targetStyle,
-              notes: state.notes,
-              blob: state.blob,
-            };
-          }
-          return state;
-        case 'PROCESS_ERROR':
-          if (state.status === 'processing') {
-            return { status: 'error', message: event.message };
-          }
-          return state;
-        case 'PLAY':
-          if (state.status === 'ready') {
-            return {
-              status: 'playing',
-              midi: state.midi,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              style: state.style,
-              notes: state.notes,
-              blob: state.blob,
-            };
-          }
-          return state;
-        case 'STOP':
-          if (state.status === 'playing') {
-            return {
-              status: 'ready',
-              midi: state.midi,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              style: state.style,
-              notes: state.notes,
-              blob: state.blob,
-            };
-          }
-          return state;
-        case 'RESET':
-          return { status: 'idle' };
-        case 'GENERATE_LYRICS':
-          if (state.status === 'ready') {
-            return {
-              status: 'lyrics-generating',
-              midi: state.midi,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              style: state.style,
-              notes: state.notes,
-              blob: state.blob,
-            };
-          }
-          return state;
-        case 'LYRICS_COMPLETE':
-          if (state.status === 'lyrics-generating') {
-            return {
-              status: 'ready',
-              midi: state.midi,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              style: state.style,
-              notes: state.notes,
-              blob: state.blob,
-              lyrics: event.lyrics,
-            };
-          }
-          return state;
-        case 'LYRICS_ERROR':
-          if (state.status === 'lyrics-generating') {
-            return {
-              status: 'ready',
-              midi: state.midi,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              style: state.style,
-              notes: state.notes,
-              blob: state.blob,
-              lyricsError: event.message,
-            };
-          }
-          return state;
-        case 'TRY_OTHER_STYLE':
-          if (state.status === 'ready') {
-            return {
-              status: 'processing',
-              blob: state.blob!,
-              notes: state.notes!,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              targetStyle: event.style,
-            };
-          }
-          return state;
-        case 'GENERATE_FEEDBACK':
-          if (state.status === 'ready') {
-            return {
-              status: 'feedback-generating',
-              midi: state.midi,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              style: state.style,
-              notes: state.notes,
-              blob: state.blob,
-              feedback: state.feedback,
-              feedbackError: state.feedbackError,
-            };
-          }
-          return state;
-        case 'FEEDBACK_COMPLETE':
-          if (state.status === 'feedback-generating') {
-            return {
-              status: 'ready',
-              midi: state.midi,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              style: state.style,
-              notes: state.notes,
-              blob: state.blob,
-              feedback: event.feedback,
-            };
-          }
-          return state;
-        case 'FEEDBACK_ERROR':
-          if (state.status === 'feedback-generating') {
-            return {
-              status: 'ready',
-              midi: state.midi,
-              key: state.key,
-              mode: state.mode,
-              bpm: state.bpm,
-              style: state.style,
-              notes: state.notes,
-              blob: state.blob,
-              feedbackError: event.message,
-            };
-          }
-          return state;
-      }
-    },
-  };
+export function reducer(state: State, event: Event): State {
+  switch (event.type) {
+    case 'START_ARRANGING':
+      return {
+        main: { stage: 'arranging', input: event.input, style: event.style },
+        stems: 'idle',
+        render: 'idle',
+        progress: 0,
+      };
+    case 'ARRANGEMENT_READY':
+      if (state.main.stage !== 'arranging') return state;
+      return {
+        ...state,
+        main: { stage: 'ready', input: state.main.input, style: state.main.style, tracks: event.tracks },
+        stems: event.stems,
+      };
+    case 'STEMS_READY':
+      return { ...state, stems: 'ready' };
+    case 'STEMS_ERROR':
+      return { ...state, stems: 'error' };
+    case 'RENDER_QUEUED':
+      // 防重入:只有 idle 才接受 queued
+      if (state.render !== 'idle') return state;
+      return { ...state, render: 'queued', progress: 0, bytes: undefined, format: undefined };
+    case 'RENDER_STARTED':
+      if (state.render !== 'queued') return state;
+      return { ...state, render: 'rendering' };
+    case 'RENDER_PROGRESS':
+      return { ...state, progress: event.progress };
+    case 'RENDER_DONE':
+      if (state.render !== 'rendering') return state;
+      return { ...state, render: 'rendered', bytes: event.bytes, format: event.format, progress: 1 };
+    case 'RENDER_ERROR':
+      return { ...state, render: 'error' };
+    case 'CANCEL':
+      return { ...state, render: 'idle', progress: 0 };
+    case 'RESET':
+      return initialState;
+  }
 }
