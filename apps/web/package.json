@@ -16,6 +16,7 @@
     "@hummingbird/feedback": "workspace:*",
     "@hummingbird/prompt": "workspace:*",
     "@hummingbird/llm": "workspace:*",
+    "@hummingbird/render": "workspace:*",
     "@tonejs/midi": "^2.0.0",
     "tone": "^14.7.0",
     "next": "^14.2.0",

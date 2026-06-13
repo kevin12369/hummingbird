@@ -38,6 +38,9 @@ importers:
       '@hummingbird/prompt':
         specifier: workspace:*
         version: link:../../packages/prompt
+      '@hummingbird/render':
+        specifier: workspace:*
+        version: link:../../packages/render
       '@tonejs/midi':
         specifier: ^2.0.0
         version: 2.0.28
