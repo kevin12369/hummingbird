@@ -1,37 +1,42 @@
-export type Style = 'pop' | 'lo-fi' | 'jazz' | 'rock' | 'classical';
+import { STYLES, STYLE_META, STYLE_BY_CATEGORY, type StyleId } from '@hummingbird/render';
 
-export const STYLES: { id: Style; name: string }[] = [
-  { id: 'pop', name: 'Pop' },
-  { id: 'lo-fi', name: 'Lo-fi' },
-  { id: 'jazz', name: 'Jazz' },
-  { id: 'rock', name: 'Rock' },
-  { id: 'classical', name: 'Classical' },
-];
-
-export interface StyleSelectorProps {
-  current: Style;
-  onSelect: (style: Style) => void;
-  disabled: boolean;
+interface Props {
+  selected: StyleId;
+  onChange: (id: StyleId) => void;
 }
 
-export function StyleSelector({ current, onSelect, disabled }: StyleSelectorProps) {
+export function StyleSelector({ selected, onChange }: Props) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-zinc-500">Try another style:</span>
-      {STYLES.map((s) => (
-        <button
-          key={s.id}
-          type="button"
-          onClick={() => onSelect(s.id)}
-          disabled={disabled}
-          className={`text-xs px-3 py-1 rounded-full border ${
-            current === s.id
-              ? 'border-emerald-500 text-emerald-300 bg-emerald-900/20'
-              : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
-        >
-          {s.name}
-        </button>
+    <div className="flex flex-col gap-3">
+      {(['beat', 'mood', 'genre'] as const).map(category => (
+        <div key={category}>
+          <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+            {category === 'beat' ? 'Beat 节奏型' : category === 'mood' ? 'Mood 情绪' : 'Genre 流派'}
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {STYLE_BY_CATEGORY[category].map(id => {
+              const meta = STYLE_META[id];
+              const isSelected = selected === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onChange(id)}
+                  className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm transition ${
+                    isSelected
+                      ? 'bg-blue-600 text-white ring-2 ring-blue-300'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                  aria-pressed={isSelected}
+                  data-style-id={id}
+                >
+                  <span className="mr-1">{meta.emoji}</span>
+                  {meta.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       ))}
     </div>
   );

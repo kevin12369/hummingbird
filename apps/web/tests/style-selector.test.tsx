@@ -1,40 +1,35 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { StyleSelector, STYLES, type Style } from '../components/StyleSelector';
+import { StyleSelector } from '../components/StyleSelector';
+
+function getButtonByText(re: RegExp): HTMLButtonElement {
+  const el = screen.getByText(re) as HTMLElement;
+  return el.closest('button') as HTMLButtonElement;
+}
 
 describe('StyleSelector', () => {
-  it('STYLES contains 5 styles', () => {
-    expect(STYLES).toHaveLength(5);
-    expect(STYLES.map(s => s.id)).toEqual(['pop', 'lo-fi', 'jazz', 'rock', 'classical']);
+  it('renders 12 chip buttons', () => {
+    render(<StyleSelector selected="pop" onChange={() => {}} />);
+    expect(screen.getAllByRole('button')).toHaveLength(12);
   });
 
-  it('renders 5 chip buttons', () => {
-    render(<StyleSelector current="pop" onSelect={vi.fn()} disabled={false} />);
-    expect(screen.getByRole('button', { name: /pop/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /lo-fi/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /jazz/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /rock/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /classical/i })).toBeTruthy();
+  it('selected chip has aria-pressed="true"', () => {
+    render(<StyleSelector selected="lofi" onChange={() => {}} />);
+    const lofiBtn = getButtonByText(/Lo-Fi/);
+    expect(lofiBtn.getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('highlights the current style', () => {
-    render(<StyleSelector current="jazz" onSelect={vi.fn()} disabled={false} />);
-    const jazzBtn = screen.getByRole('button', { name: /jazz/i });
-    expect(jazzBtn.className).toMatch(/emerald|active|bg-/);
+  it('clicking a chip calls onChange with its style id', () => {
+    const onChange = vi.fn();
+    render(<StyleSelector selected="pop" onChange={onChange} />);
+    fireEvent.click(getButtonByText(/Trap/));
+    expect(onChange).toHaveBeenCalledWith('trap');
   });
 
-  it('calls onSelect with the chosen style', () => {
-    const onSelect = vi.fn();
-    render(<StyleSelector current="pop" onSelect={onSelect} disabled={false} />);
-    fireEvent.click(screen.getByRole('button', { name: /rock/i }));
-    expect(onSelect).toHaveBeenCalledWith('rock');
-  });
-
-  it('disables all buttons when disabled=true', () => {
-    render(<StyleSelector current="pop" onSelect={vi.fn()} disabled={true} />);
-    const popBtn = screen.getByRole('button', { name: /pop/i }) as HTMLButtonElement;
-    const jazzBtn = screen.getByRole('button', { name: /jazz/i }) as HTMLButtonElement;
-    expect(popBtn.disabled).toBe(true);
-    expect(jazzBtn.disabled).toBe(true);
+  it('renders 3 category group labels (beat / mood / genre)', () => {
+    const { container } = render(<StyleSelector selected="pop" onChange={() => {}} />);
+    expect(container.textContent).toMatch(/Beat 节奏型/);
+    expect(container.textContent).toMatch(/Mood 情绪/);
+    expect(container.textContent).toMatch(/Genre 流派/);
   });
 });
