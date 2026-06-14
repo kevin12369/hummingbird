@@ -15,6 +15,7 @@ import { Toast } from '../components/Toast';
 import { Hero } from '../components/Hero';
 import { StatusBadges } from '../components/StatusBadges';
 import { StyleCarousel } from '../components/StyleCarousel';
+import { HowItWorks } from '../components/HowItWorks';
 import { useToast } from '../hooks/useToast';
 import { useTheme } from '../lib/theme';
 import {
@@ -390,6 +391,7 @@ export default function Home() {
       <Hero />
       <StatusBadges />
       <StyleCarousel />
+      <HowItWorks />
       <main id="demo" className="flex-1 p-6 max-w-3xl mx-auto flex flex-col gap-6">
         <section className="flex flex-col items-center gap-3">
           <Recorder onComplete={handleRecordingComplete} />
