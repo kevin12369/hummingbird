@@ -20,6 +20,9 @@ import { Features } from '../components/Features';
 import { BeforeAfter } from '../components/BeforeAfter';
 import { WhoIsItFor } from '../components/WhoIsItFor';
 import { RunLocally } from '../components/RunLocally';
+import { FAQ } from '../components/FAQ';
+import { Roadmap } from '../components/Roadmap';
+import { Footer } from '../components/Footer';
 import { useToast } from '../hooks/useToast';
 import { useTheme } from '../lib/theme';
 import {
@@ -388,7 +391,7 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col">
       <header className="px-4 py-3 flex items-center border-b border-zinc-800">
-        <h1 className="text-lg font-semibold">Hummingbird (哼哼编曲)</h1>
+        <span className="text-lg font-semibold" data-testid="header-brand">Hummingbird (哼哼编曲)</span>
         <Link href="/hummingbird/portfolio" className="ml-4 text-sm text-zinc-400 hover:text-zinc-200">About</Link>
         <button type="button" onClick={() => setSettingsOpen(true)} className="ml-auto text-xl" aria-label="Open settings ⚙">⚙</button>
       </header>
@@ -400,6 +403,8 @@ export default function Home() {
       <BeforeAfter />
       <WhoIsItFor />
       <RunLocally />
+      <FAQ />
+      <Roadmap />
       <main id="demo" className="flex-1 p-6 max-w-3xl mx-auto flex flex-col gap-6">
         <section className="flex flex-col items-center gap-3">
           <Recorder onComplete={handleRecordingComplete} />
@@ -469,6 +474,7 @@ export default function Home() {
         }}
       />
       <Toast toasts={toasts} onDismiss={dismiss} />
+      <Footer />
     </div>
   );
 }

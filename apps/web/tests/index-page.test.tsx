@@ -19,10 +19,14 @@ describe('Home page', () => {
     (globalThis as any).navigator = { mediaDevices: { getUserMedia: vi.fn().mockResolvedValue({}) } };
   });
 
-  it('renders header with title + settings button', () => {
+  it('renders header with brand + settings button', () => {
     const { container } = render(<Home />);
-    const headerH1 = container.querySelector('header h1');
-    expect(headerH1?.textContent).toMatch(/Hummingbird/i);
+    const headerBrand = container.querySelector('header [data-testid="header-brand"]');
+    expect(headerBrand?.textContent).toMatch(/Hummingbird/i);
+    // The page must have exactly ONE h1 (Hero), not two.
+    const h1s = container.querySelectorAll('h1');
+    expect(h1s.length).toBe(1);
+    expect(h1s[0]?.textContent).toMatch(/Hummingbird/);
     expect(screen.getByRole('button', { name: /⚙/ })).toBeTruthy();
   });
 
