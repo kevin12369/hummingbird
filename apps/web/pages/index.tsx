@@ -12,6 +12,8 @@ import { LyricsPanel } from '../components/LyricsPanel';
 import { FeedbackPanel } from '../components/FeedbackPanel';
 import { PitchView } from '../components/PitchView';
 import { Toast } from '../components/Toast';
+import { Hero } from '../components/Hero';
+import { StatusBadges } from '../components/StatusBadges';
 import { useToast } from '../hooks/useToast';
 import { useTheme } from '../lib/theme';
 import {
@@ -384,7 +386,9 @@ export default function Home() {
         <Link href="/hummingbird/portfolio" className="ml-4 text-sm text-zinc-400 hover:text-zinc-200">About</Link>
         <button type="button" onClick={() => setSettingsOpen(true)} className="ml-auto text-xl" aria-label="Open settings ⚙">⚙</button>
       </header>
-      <main className="flex-1 p-6 max-w-3xl mx-auto flex flex-col gap-6">
+      <Hero />
+      <StatusBadges />
+      <main id="demo" className="flex-1 p-6 max-w-3xl mx-auto flex flex-col gap-6">
         <section className="flex flex-col items-center gap-3">
           <Recorder onComplete={handleRecordingComplete} />
           <button

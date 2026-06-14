@@ -20,8 +20,9 @@ describe('Home page', () => {
   });
 
   it('renders header with title + settings button', () => {
-    render(<Home />);
-    expect(screen.getByText(/Hummingbird/i)).toBeTruthy();
+    const { container } = render(<Home />);
+    const headerH1 = container.querySelector('header h1');
+    expect(headerH1?.textContent).toMatch(/Hummingbird/i);
     expect(screen.getByRole('button', { name: /⚙/ })).toBeTruthy();
   });
 
